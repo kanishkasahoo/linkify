@@ -62,7 +62,7 @@ export function LinkTable({ links, total, appUrl }: LinkTableProps) {
       ) : null}
 
       <div className="rounded-lg border border-border bg-card">
-        <Table>
+        <Table className="min-w-[720px]">
           <TableHeader>
             <TableRow>
               <TableHead className="w-12">

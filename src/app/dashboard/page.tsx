@@ -2,6 +2,7 @@ import Link from "next/link";
 import { asc, desc, eq, gte, sql } from "drizzle-orm";
 
 import { getDashboardStats } from "@/actions/analytics";
+import { ChartErrorBoundary } from "@/components/analytics/chart-error-boundary";
 import { ClicksChart } from "@/components/analytics/clicks-chart";
 import { StatsCards } from "@/components/dashboard/stats-cards";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -84,7 +85,9 @@ export default async function DashboardPage() {
             Click activity over the last 30 days.
           </p>
         </div>
-        <ClicksChart data={recentClicksSeries} />
+        <ChartErrorBoundary>
+          <ClicksChart data={recentClicksSeries} />
+        </ChartErrorBoundary>
       </div>
 
       <div className="space-y-3">
@@ -105,7 +108,7 @@ export default async function DashboardPage() {
           </Link>
         </div>
         <div className="rounded-lg border border-border bg-card">
-          <Table>
+          <Table className="min-w-[640px]">
             <TableHeader>
               <TableRow>
                 <TableHead>Slug</TableHead>

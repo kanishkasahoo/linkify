@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { ArrowLeft } from "lucide-react";
 
 import { getLinkAnalytics } from "@/actions/analytics";
+import { ChartErrorBoundary } from "@/components/analytics/chart-error-boundary";
 import { ClicksChart } from "@/components/analytics/clicks-chart";
 import { CountryChart } from "@/components/analytics/country-chart";
 import { DateRangePicker } from "@/components/analytics/date-range-picker";
@@ -196,14 +197,18 @@ export default async function LinkDetailPage({
         <DateRangePicker value={dateRange} />
       </div>
 
-      <ClicksChart data={analytics.clicksByDate} />
+      <ChartErrorBoundary>
+        <ClicksChart data={analytics.clicksByDate} />
+      </ChartErrorBoundary>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="space-y-3">
           <h3 className="text-sm font-semibold text-foreground">
             Clicks by country
           </h3>
-          <CountryChart data={analytics.clicksByCountry} />
+          <ChartErrorBoundary height={240}>
+            <CountryChart data={analytics.clicksByCountry} />
+          </ChartErrorBoundary>
         </div>
         <div className="space-y-3">
           <h3 className="text-sm font-semibold text-foreground">

@@ -76,6 +76,7 @@ export function SearchFilterBar({
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search by slug or URL"
             className="pl-9"
+            aria-label="Search links"
           />
         </div>
         <Button type="submit" variant="secondary">

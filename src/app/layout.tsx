@@ -13,9 +13,20 @@ const jetbrainsMono = JetBrains_Mono({
   subsets: ["latin"],
 });
 
+const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+
 export const metadata: Metadata = {
-  title: "Linkify",
-  description: "Personal Link Shortener",
+  metadataBase: new URL(appUrl),
+  title: {
+    default: "Linkify",
+    template: "%s | Linkify",
+  },
+  description: "Personal link shortener for fast redirects and analytics.",
+  applicationName: "Linkify",
+  themeColor: "#09090b",
+  icons: {
+    icon: "/globe.svg",
+  },
 };
 
 export default function RootLayout({

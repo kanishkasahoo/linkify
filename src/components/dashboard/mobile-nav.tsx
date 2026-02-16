@@ -33,6 +33,7 @@ export function MobileNav({ items, className }: MobileNavProps) {
           variant="ghost"
           size="icon"
           className={cn("md:hidden", className)}
+          aria-label="Open navigation"
         >
           <Menu />
         </Button>
