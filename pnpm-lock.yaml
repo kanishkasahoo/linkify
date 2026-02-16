@@ -84,6 +84,9 @@ importers:
       '@types/react-dom':
         specifier: ^19
         version: 19.2.3(@types/react@19.2.14)
+      dotenv:
+        specifier: ^17.3.1
+        version: 17.3.1
       shadcn:
         specifier: ^3.8.5
         version: 3.8.5(@types/node@20.19.33)(typescript@5.9.3)
