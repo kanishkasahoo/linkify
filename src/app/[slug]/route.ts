@@ -54,11 +54,6 @@ type RouteContext = {
 };
 
 const getCountry = (request: NextRequest): string | null => {
-  const geoCountry = request.geo?.country?.trim();
-  if (geoCountry) {
-    return geoCountry;
-  }
-
   const headerCountry =
     request.headers.get("x-vercel-ip-country") ||
     request.headers.get("cf-ipcountry");
