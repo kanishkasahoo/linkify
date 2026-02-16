@@ -1,3 +1,4 @@
+import type { Route } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { Link2, LogOut } from "lucide-react";
@@ -10,6 +11,12 @@ type DashboardLayoutProps = {
   children: React.ReactNode;
 };
 
+type NavItem = {
+  label: string;
+  href: Route;
+  icon: React.ReactNode;
+};
+
 export default async function DashboardLayout({
   children,
 }: DashboardLayoutProps) {
@@ -20,7 +27,7 @@ export default async function DashboardLayout({
     await signOut({ redirectTo: "/login" });
   };
 
-  const navItems = [
+  const navItems: NavItem[] = [
     {
       label: "Links",
       href: "/dashboard/links",

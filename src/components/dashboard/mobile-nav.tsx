@@ -1,6 +1,7 @@
 "use client";
 
 import { Menu } from "lucide-react";
+import type { Route } from "next";
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
@@ -15,7 +16,7 @@ import { cn } from "@/lib/utils";
 
 type NavItem = {
   label: string;
-  href: string;
+  href: Route;
   icon?: React.ReactNode;
 };
 

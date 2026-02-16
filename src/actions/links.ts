@@ -424,7 +424,8 @@ export async function getLinks(input: unknown): Promise<{
       clickCount,
     })
     .from(links)
-    .leftJoin(clicks, eq(clicks.linkId, links.id));
+    .leftJoin(clicks, eq(clicks.linkId, links.id))
+    .$dynamic();
 
   if (whereClause) {
     listQuery = listQuery.where(whereClause);
@@ -436,7 +437,10 @@ export async function getLinks(input: unknown): Promise<{
     .limit(pageSize)
     .offset(offset);
 
-  let totalQuery = db.select({ count: sql<number>`count(*)` }).from(links);
+  let totalQuery = db
+    .select({ count: sql<number>`count(*)` })
+    .from(links)
+    .$dynamic();
 
   if (whereClause) {
     totalQuery = totalQuery.where(whereClause);
