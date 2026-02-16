@@ -91,6 +91,7 @@ export const LinkListSchema = z.object({
 });
 
 export const DateRangeSchema = z.enum(["7d", "30d", "90d", "all"]);
+export const SlugSchema = slugSchema;
 
 export type CreateLinkInput = z.infer<typeof CreateLinkSchema>;
 export type UpdateLinkInput = z.infer<typeof UpdateLinkSchema>;

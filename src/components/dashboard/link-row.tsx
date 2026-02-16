@@ -1,10 +1,11 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import {
   Copy,
   MoreHorizontal,
+  QrCode,
   ToggleLeft,
   ToggleRight,
   Trash2,
@@ -12,6 +13,7 @@ import {
 
 import { deleteLink, toggleLinks } from "@/actions/links";
 import { LinkFormDialog } from "@/components/dashboard/link-form";
+import { QrDialog } from "@/components/dashboard/qr-dialog";
 import { CopyButton } from "@/components/shared/copy-button";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { UrlDisplay } from "@/components/shared/url-display";
@@ -51,6 +53,7 @@ export function LinkRow({
   appUrl,
 }: LinkRowProps) {
   const [isPending, startTransition] = useTransition();
+  const [qrOpen, setQrOpen] = useState(false);
 
   const shortUrl = appUrl
     ? `${appUrl.replace(/\/$/, "")}/${link.slug}`
@@ -120,6 +123,7 @@ export function LinkRow({
         <StatusBadge isActive={link.isActive} expiresAt={link.expiresAt} />
       </TableCell>
       <TableCell className="text-right">
+        <QrDialog slug={link.slug} appUrl={appUrl} open={qrOpen} onOpenChange={setQrOpen} />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="icon" aria-label="Link actions">
@@ -142,6 +146,10 @@ export function LinkRow({
             <DropdownMenuItem onClick={handleCopyShortUrl}>
               <Copy />
               Copy short URL
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => setQrOpen(true)}>
+              <QrCode />
+              QR code
             </DropdownMenuItem>
             <DropdownMenuItem onClick={handleToggle} disabled={isPending}>
               {link.isActive ? <ToggleLeft /> : <ToggleRight />}

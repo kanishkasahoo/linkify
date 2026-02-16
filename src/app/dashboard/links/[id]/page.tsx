@@ -10,6 +10,7 @@ import { DateRangePicker } from "@/components/analytics/date-range-picker";
 import { ReferrerTable } from "@/components/analytics/referrer-table";
 import { LinkDeleteButton } from "@/components/dashboard/link-delete-button";
 import { LinkFormDialog } from "@/components/dashboard/link-form";
+import { QrDialog } from "@/components/dashboard/qr-dialog";
 import { CopyButton } from "@/components/shared/copy-button";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { UrlDisplay } from "@/components/shared/url-display";
@@ -117,6 +118,15 @@ export default async function LinkDetailPage({
                   {shortUrl}
                 </span>
                 <CopyButton value={shortUrl} label="Copy short URL" size="sm" />
+                <QrDialog
+                  slug={link.slug}
+                  appUrl={appUrl}
+                  trigger={
+                    <Button type="button" variant="outline" size="sm">
+                      QR code
+                    </Button>
+                  }
+                />
               </div>
             </div>
             <div>
