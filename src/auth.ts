@@ -41,11 +41,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       const githubId =
         typeof token.githubId === "string" ? token.githubId : token.sub ?? ""
 
-      if (!isAuthorizedId(githubId)) {
-        return null
-      }
-
-      if (session.user) {
+      if (isAuthorizedId(githubId)) {
         session.user.id = githubId
       }
 

@@ -1,5 +1,6 @@
 import { auth, signIn } from "@/auth"
 import { Button } from "@/components/ui/button"
+import type { Route } from "next"
 import { redirect } from "next/navigation"
 
 type LoginPageProps = {
@@ -37,7 +38,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   const resolvedSearchParams = await searchParams
   const session = await auth()
   if (session?.user) {
-    redirect("/dashboard")
+    redirect("/dashboard" as Route)
   }
 
   const errorParam = getStringParam(resolvedSearchParams?.error)
