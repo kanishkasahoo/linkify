@@ -5,9 +5,7 @@ export default function Home() {
         <h1 className="text-5xl font-bold tracking-tight text-[var(--text-primary)]">
           Linkify
         </h1>
-        <p className="text-xl text-[var(--text-secondary)]">
-          Coming soon
-        </p>
+        <p className="text-xl text-[var(--text-secondary)]">Coming soon</p>
       </main>
     </div>
   );

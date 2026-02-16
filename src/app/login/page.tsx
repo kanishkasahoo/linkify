@@ -1,71 +1,69 @@
-import { auth, signIn } from "@/auth"
-import { Button } from "@/components/ui/button"
-import type { Route } from "next"
-import { redirect } from "next/navigation"
+import { auth, signIn } from "@/auth";
+import { Button } from "@/components/ui/button";
+import type { Route } from "next";
+import { redirect } from "next/navigation";
 
 type LoginPageProps = {
   searchParams?: Promise<{
-    error?: string | string[]
-    callbackUrl?: string | string[]
-  }>
-}
+    error?: string | string[];
+    callbackUrl?: string | string[];
+  }>;
+};
 
 function getStringParam(value?: string | string[]) {
   if (!value) {
-    return undefined
+    return undefined;
   }
 
-  return Array.isArray(value) ? value[0] : value
+  return Array.isArray(value) ? value[0] : value;
 }
 
 function isSafeCallbackUrl(value?: string) {
   if (!value) {
-    return false
+    return false;
   }
 
   if (!value.startsWith("/")) {
-    return false
+    return false;
   }
 
   if (value.startsWith("//") || value.startsWith("/\\")) {
-    return false
+    return false;
   }
 
-  return true
+  return true;
 }
 
 export default async function LoginPage({ searchParams }: LoginPageProps) {
-  const resolvedSearchParams = await searchParams
-  const session = await auth()
+  const resolvedSearchParams = await searchParams;
+  const session = await auth();
   if (session?.user) {
-    redirect("/dashboard" as Route)
+    redirect("/dashboard" as Route);
   }
 
-  const errorParam = getStringParam(resolvedSearchParams?.error)
-  const callbackParam = getStringParam(resolvedSearchParams?.callbackUrl)
+  const errorParam = getStringParam(resolvedSearchParams?.error);
+  const callbackParam = getStringParam(resolvedSearchParams?.callbackUrl);
   const callbackUrl = isSafeCallbackUrl(callbackParam)
     ? callbackParam
-    : "/dashboard"
+    : "/dashboard";
 
   const errorMessage =
     errorParam === "AccessDenied"
       ? "This GitHub account is not authorized to access Linkify."
       : errorParam
         ? "Unable to sign in. Please try again."
-        : null
+        : null;
 
   const handleSignIn = async () => {
-    "use server"
-    await signIn("github", { redirectTo: callbackUrl })
-  }
+    "use server";
+    await signIn("github", { redirectTo: callbackUrl });
+  };
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-[var(--background)] px-4">
       <div className="w-full max-w-md rounded-lg border border-[var(--border)] bg-[var(--card)] p-8 shadow-sm">
         <div className="space-y-2 text-center">
-          <h1 className="text-3xl font-semibold text-foreground">
-            Linkify
-          </h1>
+          <h1 className="text-3xl font-semibold text-foreground">Linkify</h1>
           <p className="text-sm text-muted-foreground">
             Sign in with GitHub to access your dashboard.
           </p>
@@ -84,5 +82,5 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
         </form>
       </div>
     </div>
-  )
+  );
 }

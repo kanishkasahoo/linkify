@@ -1,11 +1,11 @@
-import { auth } from "@/auth"
+import { auth } from "@/auth";
 
 export async function requireAuth() {
-  const session = await auth()
+  const session = await auth();
 
   if (!session?.user) {
-    throw new Error("Unauthorized")
+    throw new Error("Unauthorized");
   }
 
-  return session
+  return session;
 }

@@ -7,8 +7,8 @@ import {
   timestamp,
   index,
   uniqueIndex,
-} from "drizzle-orm/pg-core"
-import { relations } from "drizzle-orm"
+} from "drizzle-orm/pg-core";
+import { relations } from "drizzle-orm";
 
 // Links table - Short URL definitions
 export const links = pgTable(
@@ -30,8 +30,8 @@ export const links = pgTable(
     uniqueIndex("links_slug_unique").on(table.slug),
     index("links_is_active_idx").on(table.isActive),
     index("links_created_at_idx").on(table.createdAt),
-  ]
-)
+  ],
+);
 
 // Clicks table - Analytics events (one per redirect)
 export const clicks = pgTable(
@@ -52,23 +52,23 @@ export const clicks = pgTable(
     index("clicks_clicked_at_idx").on(table.clickedAt),
     index("clicks_country_idx").on(table.country),
     index("clicks_link_id_clicked_at_idx").on(table.linkId, table.clickedAt),
-  ]
-)
+  ],
+);
 
 // Relations
 export const linksRelations = relations(links, ({ many }) => ({
   clicks: many(clicks),
-}))
+}));
 
 export const clicksRelations = relations(clicks, ({ one }) => ({
   link: one(links, {
     fields: [clicks.linkId],
     references: [links.id],
   }),
-}))
+}));
 
 // Type exports
-export type Link = typeof links.$inferSelect
-export type NewLink = typeof links.$inferInsert
-export type Click = typeof clicks.$inferSelect
-export type NewClick = typeof clicks.$inferInsert
+export type Link = typeof links.$inferSelect;
+export type NewLink = typeof links.$inferInsert;
+export type Click = typeof clicks.$inferSelect;
+export type NewClick = typeof clicks.$inferInsert;

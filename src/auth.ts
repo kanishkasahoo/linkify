@@ -1,19 +1,19 @@
-import NextAuth from "next-auth"
-import GitHub from "next-auth/providers/github"
+import NextAuth from "next-auth";
+import GitHub from "next-auth/providers/github";
 
-const authorizedGitHubId = process.env.AUTHORIZED_GITHUB_ID
+const authorizedGitHubId = process.env.AUTHORIZED_GITHUB_ID;
 
 const isAuthorizedId = (value?: string | number | null) => {
   if (!authorizedGitHubId) {
-    return false
+    return false;
   }
 
   if (value === undefined || value === null) {
-    return false
+    return false;
   }
 
-  return String(value) === authorizedGitHubId
-}
+  return String(value) === authorizedGitHubId;
+};
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   providers: [
@@ -28,27 +28,27 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   },
   callbacks: {
     signIn({ profile }) {
-      return isAuthorizedId(profile?.id ?? null)
+      return isAuthorizedId(profile?.id ?? null);
     },
     jwt({ token, profile }) {
       if (profile?.id) {
-        token.githubId = String(profile.id)
+        token.githubId = String(profile.id);
       }
 
-      return token
+      return token;
     },
     session({ session, token }) {
       const githubId =
-        typeof token.githubId === "string" ? token.githubId : token.sub ?? ""
+        typeof token.githubId === "string" ? token.githubId : (token.sub ?? "");
 
       if (isAuthorizedId(githubId)) {
-        session.user.id = githubId
+        session.user.id = githubId;
       }
 
-      return session
+      return session;
     },
     authorized({ auth }) {
-      return isAuthorizedId(auth?.user?.id ?? null)
+      return isAuthorizedId(auth?.user?.id ?? null);
     },
   },
-})
+});
