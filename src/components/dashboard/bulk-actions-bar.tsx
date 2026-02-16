@@ -56,14 +56,15 @@ export function BulkActionsBar({
   };
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card px-4 py-3">
+    <div className="flex flex-col gap-3 rounded-lg border border-border bg-card px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
       <span className="text-sm text-muted-foreground">
         {selectedIds.length} selected
       </span>
-      <div className="flex flex-wrap gap-2">
+      <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap">
         <Button
           type="button"
           variant="secondary"
+          className="w-full sm:w-auto"
           onClick={() => handleToggle(true)}
           disabled={isPending}
         >
@@ -72,6 +73,7 @@ export function BulkActionsBar({
         <Button
           type="button"
           variant="secondary"
+          className="w-full sm:w-auto"
           onClick={() => handleToggle(false)}
           disabled={isPending}
         >
@@ -80,6 +82,7 @@ export function BulkActionsBar({
         <Button
           type="button"
           variant="destructive"
+          className="w-full sm:w-auto"
           onClick={handleDelete}
           disabled={isPending}
         >

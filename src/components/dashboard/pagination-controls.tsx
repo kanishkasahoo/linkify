@@ -100,7 +100,7 @@ export function PaginationControls({
 
   return (
     <div className="flex flex-col gap-4 border-t border-border pt-4 md:flex-row md:items-center md:justify-between">
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
         <span>Rows per page</span>
         <Select
           value={String(pageSize)}
@@ -119,11 +119,12 @@ export function PaginationControls({
         </Select>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-center sm:gap-2">
         <Button
           type="button"
           variant="outline"
           size="sm"
+          className="w-full sm:w-auto"
           onClick={() => updateParams({ page: Math.max(1, page - 1) })}
           disabled={page <= 1}
         >
@@ -131,7 +132,7 @@ export function PaginationControls({
           Prev
         </Button>
 
-        <div className="flex items-center gap-1">
+        <div className="flex flex-wrap justify-center gap-1 sm:flex-nowrap">
           {pages.map((item) =>
             item.type === "ellipsis" ? (
               <span
@@ -159,6 +160,7 @@ export function PaginationControls({
           type="button"
           variant="outline"
           size="sm"
+          className="w-full sm:w-auto"
           onClick={() => updateParams({ page: Math.min(totalPages, page + 1) })}
           disabled={page >= totalPages}
         >

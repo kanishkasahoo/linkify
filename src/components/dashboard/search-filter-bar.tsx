@@ -67,7 +67,7 @@ export function SearchFilterBar({
     <div className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4 md:flex-row md:items-center md:justify-between">
       <form
         onSubmit={handleSubmit}
-        className="flex w-full items-center gap-2 md:max-w-md"
+        className="flex w-full flex-col items-stretch gap-2 sm:flex-row sm:items-center md:max-w-md"
       >
         <div className="relative flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -79,19 +79,19 @@ export function SearchFilterBar({
             aria-label="Search links"
           />
         </div>
-        <Button type="submit" variant="secondary">
+        <Button type="submit" variant="secondary" className="w-full sm:w-auto">
           Search
         </Button>
       </form>
 
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex w-full flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center md:w-auto md:justify-end">
         <Select
           value={status}
           onValueChange={(value) =>
             updateParams({ status: value as LinkStatusFilter })
           }
         >
-          <SelectTrigger className="h-10 w-[150px]">
+          <SelectTrigger className="h-10 w-full sm:w-[150px]">
             <SelectValue placeholder="Status" />
           </SelectTrigger>
           <SelectContent>
@@ -108,7 +108,7 @@ export function SearchFilterBar({
             updateParams({ sortBy: value as LinkSortBy })
           }
         >
-          <SelectTrigger className="h-10 w-[170px]">
+          <SelectTrigger className="h-10 w-full sm:w-[170px]">
             <SelectValue placeholder="Sort by" />
           </SelectTrigger>
           <SelectContent>
@@ -124,6 +124,7 @@ export function SearchFilterBar({
           onClick={() =>
             updateParams({ sortOrder: sortOrder === "asc" ? "desc" : "asc" })
           }
+          className="w-full sm:w-auto"
         >
           <ArrowUpDown />
           {sortOrder === "asc" ? "Ascending" : "Descending"}

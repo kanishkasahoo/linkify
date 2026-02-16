@@ -35,6 +35,8 @@ type LinkFormDialogProps = {
   mode: "create" | "edit";
   trigger?: React.ReactNode;
   appUrl: string;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
   initialValues?: {
     id: string;
     url: string;
@@ -69,16 +71,27 @@ export function LinkFormDialog({
   mode,
   trigger,
   appUrl,
+  open,
+  onOpenChange,
   initialValues,
   className,
 }: LinkFormDialogProps) {
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
   const [formValues, setFormValues] = useState<LinkFormValues>(defaultValues);
   const [errors, setErrors] = useState<LinkFormErrors>({});
   const [isPending, startTransition] = useTransition();
+  const isControlled = open !== undefined;
+  const dialogOpen = isControlled ? open : internalOpen;
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!isControlled) {
+      setInternalOpen(nextOpen);
+    }
+    onOpenChange?.(nextOpen);
+  };
 
   useEffect(() => {
-    if (!open) {
+    if (!dialogOpen) {
       return;
     }
 
@@ -93,7 +106,7 @@ export function LinkFormDialog({
       setFormValues(defaultValues);
     }
     setErrors({});
-  }, [open, mode, initialValues]);
+  }, [dialogOpen, mode, initialValues]);
 
   const previewSlug = formValues.slug.trim() || "auto";
   const previewUrl = useMemo(() => {
@@ -158,12 +171,14 @@ export function LinkFormDialog({
       }
 
       toast.success(mode === "create" ? "Link created" : "Link updated");
-      setOpen(false);
+      if (mode === "create") {
+        handleOpenChange(false);
+      }
     });
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={dialogOpen} onOpenChange={handleOpenChange}>
       {trigger ? <DialogTrigger asChild>{trigger}</DialogTrigger> : null}
       <DialogContent className={cn("max-w-lg", className)}>
         <DialogHeader>
@@ -262,7 +277,7 @@ export function LinkFormDialog({
             <Button
               type="button"
               variant="outline"
-              onClick={() => setOpen(false)}
+              onClick={() => handleOpenChange(false)}
               disabled={isPending}
             >
               Cancel

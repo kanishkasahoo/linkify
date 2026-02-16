@@ -27,6 +27,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { TableCell, TableRow } from "@/components/ui/table";
+import { cn } from "@/lib/utils";
 
 export type LinkRowData = {
   id: string;
@@ -46,13 +47,15 @@ type LinkRowProps = {
   appUrl: string;
 };
 
-export function LinkRow({
-  link,
-  isSelected,
-  onSelectChange,
-  appUrl,
-}: LinkRowProps) {
+type LinkActionsProps = {
+  link: LinkRowData;
+  appUrl: string;
+  className?: string;
+};
+
+export function LinkActions({ link, appUrl, className }: LinkActionsProps) {
   const [isPending, startTransition] = useTransition();
+  const [editOpen, setEditOpen] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
 
   const shortUrl = appUrl
@@ -97,6 +100,69 @@ export function LinkRow({
   };
 
   return (
+    <div className={cn("flex items-center justify-end gap-1", className)}>
+      <LinkFormDialog
+        mode="edit"
+        appUrl={appUrl}
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        initialValues={{
+          id: link.id,
+          url: link.url,
+          slug: link.slug,
+          expiresAt: link.expiresAt,
+          isActive: link.isActive,
+        }}
+      />
+      <QrDialog slug={link.slug} appUrl={appUrl} open={qrOpen} onOpenChange={setQrOpen} />
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="icon" aria-label="Link actions">
+            <MoreHorizontal />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onSelect={() => setEditOpen(true)}>
+            Edit link
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={handleCopyShortUrl}>
+            <Copy />
+            Copy short URL
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => setQrOpen(true)}>
+            <QrCode />
+            QR code
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={handleToggle} disabled={isPending}>
+            {link.isActive ? <ToggleLeft /> : <ToggleRight />}
+            {link.isActive ? "Deactivate" : "Activate"}
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            onClick={handleDelete}
+            className="text-destructive"
+            disabled={isPending}
+          >
+            <Trash2 />
+            Delete
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+}
+
+export function LinkRow({
+  link,
+  isSelected,
+  onSelectChange,
+  appUrl,
+}: LinkRowProps) {
+  const shortUrl = appUrl
+    ? `${appUrl.replace(/\/$/, "")}/${link.slug}`
+    : `/${link.slug}`;
+
+  return (
     <TableRow className="border-border">
       <TableCell className="w-12">
         <Checkbox
@@ -123,49 +189,7 @@ export function LinkRow({
         <StatusBadge isActive={link.isActive} expiresAt={link.expiresAt} />
       </TableCell>
       <TableCell className="text-right">
-        <QrDialog slug={link.slug} appUrl={appUrl} open={qrOpen} onOpenChange={setQrOpen} />
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" aria-label="Link actions">
-              <MoreHorizontal />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <LinkFormDialog
-              mode="edit"
-              appUrl={appUrl}
-              initialValues={{
-                id: link.id,
-                url: link.url,
-                slug: link.slug,
-                expiresAt: link.expiresAt,
-                isActive: link.isActive,
-              }}
-              trigger={<DropdownMenuItem>Edit link</DropdownMenuItem>}
-            />
-            <DropdownMenuItem onClick={handleCopyShortUrl}>
-              <Copy />
-              Copy short URL
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => setQrOpen(true)}>
-              <QrCode />
-              QR code
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={handleToggle} disabled={isPending}>
-              {link.isActive ? <ToggleLeft /> : <ToggleRight />}
-              {link.isActive ? "Deactivate" : "Activate"}
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onClick={handleDelete}
-              className="text-destructive"
-              disabled={isPending}
-            >
-              <Trash2 />
-              Delete
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <LinkActions link={link} appUrl={appUrl} />
       </TableCell>
     </TableRow>
   );

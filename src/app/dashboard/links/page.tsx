@@ -101,7 +101,7 @@ export default async function LinksPage({ searchParams }: LinksPageProps) {
         <LinkFormDialog
           mode="create"
           appUrl={appUrl}
-          trigger={<Button>Create link</Button>}
+          trigger={<Button className="w-full sm:w-auto">Create link</Button>}
         />
       </div>
 

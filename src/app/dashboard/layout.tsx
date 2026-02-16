@@ -68,7 +68,7 @@ export default async function DashboardLayout({
         </aside>
 
         <div className="flex flex-1 flex-col">
-          <header className="flex h-16 items-center justify-between border-b border-border bg-card px-4 md:px-6">
+          <header className="flex min-h-16 flex-wrap items-center justify-between gap-3 border-b border-border bg-card px-4 py-3 md:px-6">
             <div className="flex items-center gap-3">
               <MobileNav items={navItems} />
               <span className="text-sm text-muted-foreground">Dashboard</span>
@@ -88,7 +88,7 @@ export default async function DashboardLayout({
                     {userInitial}
                   </div>
                 )}
-                <span className="text-sm text-foreground">
+                <span className="hidden text-sm text-foreground sm:block">
                   {session?.user?.name ?? session?.user?.email ?? "Admin"}
                 </span>
               </div>
