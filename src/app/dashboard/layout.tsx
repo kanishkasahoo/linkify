@@ -1,7 +1,7 @@
 import type { Route } from "next";
 import Image from "next/image";
 import Link from "next/link";
-import { Link2, LogOut } from "lucide-react";
+import { BarChart3, Link2, LogOut } from "lucide-react";
 
 import { auth, signOut } from "@/auth";
 import { MobileNav } from "@/components/dashboard/mobile-nav";
@@ -28,6 +28,11 @@ export default async function DashboardLayout({
   };
 
   const navItems: NavItem[] = [
+    {
+      label: "Dashboard",
+      href: "/dashboard",
+      icon: <BarChart3 className="h-4 w-4" />,
+    },
     {
       label: "Links",
       href: "/dashboard/links",

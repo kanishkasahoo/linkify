@@ -90,6 +90,8 @@ export const LinkListSchema = z.object({
   sortOrder: z.enum(["asc", "desc"]).default("desc"),
 });
 
+export const DateRangeSchema = z.enum(["7d", "30d", "90d", "all"]);
+
 export type CreateLinkInput = z.infer<typeof CreateLinkSchema>;
 export type UpdateLinkInput = z.infer<typeof UpdateLinkSchema>;
 export type LinkListInput = z.infer<typeof LinkListSchema>;
