@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import { Toaster } from "sonner";
 import "./globals.css";
@@ -23,10 +23,13 @@ export const metadata: Metadata = {
   },
   description: "Personal link shortener for fast redirects and analytics.",
   applicationName: "Linkify",
-  themeColor: "#09090b",
   icons: {
-    icon: "/globe.svg",
+    icon: "/favicon.ico",
   },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#09090b",
 };
 
 export default function RootLayout({
