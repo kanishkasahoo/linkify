@@ -1,7 +1,7 @@
+import { BarChart3, Link2, LogOut } from "lucide-react";
 import type { Route } from "next";
 import Image from "next/image";
 import Link from "next/link";
-import { BarChart3, Link2, LogOut } from "lucide-react";
 
 import { auth, signOut } from "@/auth";
 import { MobileNav } from "@/components/dashboard/mobile-nav";
@@ -44,8 +44,8 @@ export default async function DashboardLayout({
     session?.user?.name?.[0] || session?.user?.email?.[0] || "U";
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="flex min-h-screen">
+    <div className="min-h-screen max-w-full overflow-x-hidden bg-background">
+      <div className="flex min-h-screen max-w-full">
         <aside className="hidden w-64 flex-col border-r border-border bg-card md:flex">
           <div className="flex h-16 items-center gap-2 border-b border-border px-6">
             <Link2 className="h-5 w-5 text-primary" />
@@ -67,14 +67,14 @@ export default async function DashboardLayout({
           </nav>
         </aside>
 
-        <div className="flex flex-1 flex-col">
-          <header className="flex min-h-16 flex-wrap items-center justify-between gap-3 border-b border-border bg-card px-4 py-3 md:px-6">
+        <div className="flex flex-1 flex-col min-w-0">
+          <header className="flex flex-col gap-3 border-b border-border bg-card px-4 py-3 md:flex-row md:items-center md:justify-between md:px-6">
             <div className="flex items-center gap-3">
               <MobileNav items={navItems} />
               <span className="text-sm text-muted-foreground">Dashboard</span>
             </div>
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-3 rounded-full border border-border bg-background px-3 py-1.5">
+            <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-end md:w-auto">
+              <div className="flex min-w-0 items-center gap-3 rounded-full border border-border bg-background px-3 py-1.5">
                 {session?.user?.image ? (
                   <Image
                     src={session.user.image}
@@ -88,12 +88,17 @@ export default async function DashboardLayout({
                     {userInitial}
                   </div>
                 )}
-                <span className="hidden text-sm text-foreground sm:block">
+                <span className="truncate text-sm text-foreground">
                   {session?.user?.name ?? session?.user?.email ?? "Admin"}
                 </span>
               </div>
               <form action={handleSignOut}>
-                <Button type="submit" variant="outline" size="sm">
+                <Button
+                  type="submit"
+                  variant="outline"
+                  size="sm"
+                  className="w-full sm:w-auto"
+                >
                   <LogOut />
                   Logout
                 </Button>

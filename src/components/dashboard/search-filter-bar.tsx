@@ -84,14 +84,14 @@ export function SearchFilterBar({
         </Button>
       </form>
 
-      <div className="flex w-full flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center md:w-auto md:justify-end">
+      <div className="grid w-full gap-2 sm:grid-cols-2 md:flex md:w-auto md:items-center md:justify-end">
         <Select
           value={status}
           onValueChange={(value) =>
             updateParams({ status: value as LinkStatusFilter })
           }
         >
-          <SelectTrigger className="h-10 w-full sm:w-[150px]">
+          <SelectTrigger className="h-10 w-full md:w-[150px]">
             <SelectValue placeholder="Status" />
           </SelectTrigger>
           <SelectContent>
@@ -108,7 +108,7 @@ export function SearchFilterBar({
             updateParams({ sortBy: value as LinkSortBy })
           }
         >
-          <SelectTrigger className="h-10 w-full sm:w-[170px]">
+          <SelectTrigger className="h-10 w-full md:w-[170px]">
             <SelectValue placeholder="Sort by" />
           </SelectTrigger>
           <SelectContent>
@@ -124,7 +124,7 @@ export function SearchFilterBar({
           onClick={() =>
             updateParams({ sortOrder: sortOrder === "asc" ? "desc" : "asc" })
           }
-          className="w-full sm:w-auto"
+          className="w-full sm:col-span-2 md:col-span-1 md:w-auto"
         >
           <ArrowUpDown />
           {sortOrder === "asc" ? "Ascending" : "Descending"}

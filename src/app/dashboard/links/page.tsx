@@ -91,7 +91,7 @@ export default async function LinksPage({ searchParams }: LinksPageProps) {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-foreground">Links</h1>
           <p className="text-sm text-muted-foreground">
@@ -101,7 +101,11 @@ export default async function LinksPage({ searchParams }: LinksPageProps) {
         <LinkFormDialog
           mode="create"
           appUrl={appUrl}
-          trigger={<Button className="w-full sm:w-auto">Create link</Button>}
+          trigger={
+            <Button className="w-full sm:w-auto sm:shrink-0">
+              Create link
+            </Button>
+          }
         />
       </div>
 

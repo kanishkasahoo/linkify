@@ -1,11 +1,12 @@
 "use client";
 
+import { RotateCw } from "lucide-react";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
-import { RotateCw } from "lucide-react";
 
 import { createLink, updateLink } from "@/actions/links";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -17,10 +18,9 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
 import { generateSlug } from "@/lib/slug";
-import { CreateLinkSchema } from "@/lib/validations";
 import { cn } from "@/lib/utils";
+import { CreateLinkSchema } from "@/lib/validations";
 
 type LinkFormValues = {
   url: string;
@@ -192,8 +192,8 @@ export function LinkFormDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
+        <form onSubmit={handleSubmit} className="space-y-4 min-w-0">
+          <div className="space-y-2 min-w-0 w-full">
             <Label htmlFor="url">Destination URL</Label>
             <Input
               id="url"
@@ -208,7 +208,7 @@ export function LinkFormDialog({
             ) : null}
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-2 min-w-0 w-full">
             <div className="flex items-center justify-between">
               <Label htmlFor="slug">Custom slug</Label>
               <Button
@@ -231,15 +231,15 @@ export function LinkFormDialog({
               }
               placeholder={mode === "create" ? "Auto-generated" : "custom-slug"}
             />
-            <p className="text-xs text-muted-foreground">
-              Preview: <span className="font-mono">{previewUrl}</span>
+            <p className="text-xs text-muted-foreground min-w-0 overflow-hidden">
+              Preview: <span className="font-mono break-all">{previewUrl}</span>
             </p>
             {errors.slug ? (
               <p className="text-xs text-destructive">{errors.slug}</p>
             ) : null}
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-2 min-w-0 w-full">
             <Label htmlFor="expiresAt">Expiration (UTC)</Label>
             <Input
               id="expiresAt"

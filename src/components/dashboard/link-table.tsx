@@ -11,6 +11,7 @@ import {
 import { CopyButton } from "@/components/shared/copy-button";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { UrlDisplay } from "@/components/shared/url-display";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Table,
   TableBody,
@@ -19,7 +20,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Checkbox } from "@/components/ui/checkbox";
 
 type LinkTableProps = {
   links: LinkRowData[];
@@ -45,38 +45,52 @@ function MobileLinkCard({
     : `/${link.slug}`;
 
   return (
-    <div className="rounded-lg border border-border bg-card p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 items-start gap-3">
+    <div className="rounded-lg border border-border bg-card p-4 overflow-hidden">
+      {/* Header: Checkbox + Slug + Actions */}
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0 flex-1">
           <Checkbox
             checked={isSelected}
             onCheckedChange={(value) => onSelectChange(Boolean(value))}
             aria-label={`Select link ${link.slug}`}
-            className="mt-0.5"
+            className="shrink-0"
           />
-          <div className="min-w-0 space-y-1">
-            <div className="flex items-center gap-2">
-              <span className="truncate font-mono text-sm text-foreground" title={shortUrl}>
-                {link.slug}
-              </span>
-              <CopyButton value={shortUrl} label="Copy short URL" size="sm" />
-            </div>
-            <div className="truncate text-xs text-muted-foreground" title={shortUrl}>
-              {shortUrl}
+          <div className="min-w-0 flex-1">
+            <div className="font-mono text-base font-semibold text-foreground truncate">
+              {link.slug}
             </div>
           </div>
         </div>
         <LinkActions link={link} appUrl={appUrl} className="shrink-0" />
       </div>
 
-      <div className="mt-3">
-        <UrlDisplay value={link.url} className="text-sm" />
+      {/* Short URL Preview */}
+      <div className="mt-2 ml-9 flex items-center gap-2 min-w-0">
+        <span
+          className="text-xs text-muted-foreground truncate flex-1"
+          title={shortUrl}
+        >
+          {shortUrl}
+        </span>
+        <div className="shrink-0">
+          <CopyButton value={shortUrl} label="Copy short URL" size="sm" />
+        </div>
       </div>
 
-      <div className="mt-3 flex items-center justify-between">
+      {/* Divider */}
+      <div className="my-3 ml-9 border-t border-border/50" />
+
+      {/* Destination URL */}
+      <div className="ml-9">
+        <div className="text-xs text-muted-foreground mb-1">Destination</div>
+        <UrlDisplay value={link.url} className="text-sm" maxLength={60} />
+      </div>
+
+      {/* Footer: Status + Clicks */}
+      <div className="mt-4 ml-9 flex items-center justify-between">
         <StatusBadge isActive={link.isActive} expiresAt={link.expiresAt} />
-        <span className="text-sm text-muted-foreground">
-          {link.clickCount} click{link.clickCount === 1 ? "" : "s"}
+        <span className="text-sm font-medium text-muted-foreground tabular-nums">
+          {link.clickCount} {link.clickCount === 1 ? "click" : "clicks"}
         </span>
       </div>
     </div>
@@ -152,7 +166,11 @@ export function LinkTable({ links, total, appUrl }: LinkTableProps) {
                 <TableHead className="w-12">
                   <Checkbox
                     checked={
-                      allSelected ? true : someSelected ? "indeterminate" : false
+                      allSelected
+                        ? true
+                        : someSelected
+                          ? "indeterminate"
+                          : false
                     }
                     onCheckedChange={(value) => toggleAll(Boolean(value))}
                     aria-label="Select all links"

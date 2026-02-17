@@ -1,9 +1,11 @@
-import { notFound } from "next/navigation";
-import { NextResponse, type NextRequest } from "next/server";
+import { waitUntil } from "@vercel/functions";
 import { eq } from "drizzle-orm";
+import { notFound } from "next/navigation";
+import { type NextRequest, NextResponse } from "next/server";
 
 import { db } from "@/db";
 import { clicks, links } from "@/db/schema";
+import { cache, cacheKeys, cacheTTL } from "@/lib/cache";
 
 export const runtime = "edge";
 
@@ -64,31 +66,39 @@ const getCountry = (request: NextRequest): string | null => {
 export async function GET(request: NextRequest, context: RouteContext) {
   const { slug } = await context.params;
 
-  let link:
-    | {
-        id: string;
-        url: string;
-        isActive: boolean;
-        expiresAt: Date | null;
-      }
-    | undefined;
-  try {
-    const results = await db
-      .select({
-        id: links.id,
-        url: links.url,
-        isActive: links.isActive,
-        expiresAt: links.expiresAt,
-      })
-      .from(links)
-      .where(eq(links.slug, slug))
-      .limit(1);
+  // Try cache first
+  const cacheKey = cacheKeys.link(slug);
+  let link = cache.get<{
+    id: string;
+    url: string;
+    isActive: boolean;
+    expiresAt: Date | null;
+  }>(cacheKey);
 
-    link = results[0];
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "unknown error";
-    console.error("Redirect lookup failed:", message);
-    return new Response("Service Unavailable", { status: 503 });
+  if (!link) {
+    try {
+      const results = await db
+        .select({
+          id: links.id,
+          url: links.url,
+          isActive: links.isActive,
+          expiresAt: links.expiresAt,
+        })
+        .from(links)
+        .where(eq(links.slug, slug))
+        .limit(1);
+
+      link = results[0];
+
+      // Cache the result (even if not found, to prevent repeated lookups)
+      if (link) {
+        cache.set(cacheKey, link, cacheTTL.link);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "unknown error";
+      console.error("Redirect lookup failed:", message);
+      return new Response("Service Unavailable", { status: 503 });
+    }
   }
 
   if (!link || !link.isActive) {
@@ -109,20 +119,22 @@ export async function GET(request: NextRequest, context: RouteContext) {
   const referrerHeader = request.headers.get("referer");
   const referrer = sanitizeReferrer(referrerHeader);
 
-  const analyticsInsert = db
-    .insert(clicks)
-    .values({
-      linkId: link.id,
-      country,
-      referrer,
-      clickedAt: now,
-    })
-    .catch((error) => {
-      const message = error instanceof Error ? error.message : "unknown error";
-      console.error("Analytics insert failed:", message);
-    });
-
-  void analyticsInsert;
+  // Non-blocking analytics - uses Vercel's waitUntil for proper edge async
+  waitUntil(
+    db
+      .insert(clicks)
+      .values({
+        linkId: link.id,
+        country,
+        referrer,
+        clickedAt: now,
+      })
+      .catch((error) => {
+        const message =
+          error instanceof Error ? error.message : "unknown error";
+        console.error("Analytics insert failed:", message);
+      }),
+  );
 
   return NextResponse.redirect(redirectUrl, 307);
 }

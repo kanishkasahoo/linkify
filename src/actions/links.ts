@@ -1,6 +1,5 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
 import {
   and,
   asc,
@@ -15,10 +14,13 @@ import {
   or,
   sql,
 } from "drizzle-orm";
+import { revalidatePath } from "next/cache";
 
 import { db } from "@/db";
 import { clicks, links } from "@/db/schema";
 import { requireAuth } from "@/lib/auth-utils";
+import { cache, cacheKeys } from "@/lib/cache";
+import { DEFAULT_PAGE_SIZE } from "@/lib/constants";
 import { generateSlug, isReservedSlug } from "@/lib/slug";
 import {
   CreateLinkSchema,
@@ -28,7 +30,6 @@ import {
   ToggleLinksSchema,
   UpdateLinkSchema,
 } from "@/lib/validations";
-import { DEFAULT_PAGE_SIZE } from "@/lib/constants";
 import type { ActionResult, LinkWithClicks } from "@/types";
 
 const MAX_SLUG_GENERATION_ATTEMPTS = 3;
@@ -154,6 +155,9 @@ export async function createLink(
 
     revalidatePath("/dashboard/links");
 
+    cache.delete(cacheKeys.link(finalSlug));
+    cache.delete(cacheKeys.stats());
+
     return {
       success: true,
       data: {
@@ -251,6 +255,14 @@ export async function updateLink(
 
     revalidatePath("/dashboard/links");
 
+    cache.delete(cacheKeys.link(existing[0].slug));
+    cache.delete(cacheKeys.qr(existing[0].slug));
+    if (updates.slug && updates.slug !== existing[0].slug) {
+      cache.delete(cacheKeys.link(updates.slug));
+      cache.delete(cacheKeys.qr(updates.slug));
+    }
+    cache.delete(cacheKeys.stats());
+
     return {
       success: true,
       data: {
@@ -284,7 +296,7 @@ export async function deleteLink(
     const deleted = await db
       .delete(links)
       .where(eq(links.id, parsed.data))
-      .returning({ id: links.id });
+      .returning({ id: links.id, slug: links.slug });
 
     if (deleted.length === 0) {
       return { success: false, error: "Link not found" };
@@ -292,7 +304,10 @@ export async function deleteLink(
 
     revalidatePath("/dashboard/links");
 
-    return { success: true, data: deleted[0] };
+    cache.delete(cacheKeys.link(deleted[0].slug));
+    cache.delete(cacheKeys.stats());
+
+    return { success: true, data: { id: deleted[0].id } };
   } catch (error) {
     return {
       success: false,
@@ -322,6 +337,8 @@ export async function deleteLinks(
       .returning({ id: links.id });
 
     revalidatePath("/dashboard/links");
+
+    cache.clear(); // Simpler: clear entire cache for bulk operations
 
     return { success: true, data: { count: deleted.length } };
   } catch (error) {
@@ -355,6 +372,8 @@ export async function toggleLinks(
       .returning({ id: links.id });
 
     revalidatePath("/dashboard/links");
+
+    cache.clear(); // Simpler: clear entire cache for bulk operations
 
     return { success: true, data: { count: updated.length } };
   } catch (error) {

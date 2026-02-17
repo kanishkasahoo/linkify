@@ -180,7 +180,7 @@ export function LinkRow({
         </div>
       </TableCell>
       <TableCell className="min-w-[240px]">
-        <UrlDisplay value={link.url} />
+        <UrlDisplay value={link.url} maxLength={48} />
       </TableCell>
       <TableCell className="text-right text-sm text-foreground">
         {link.clickCount}

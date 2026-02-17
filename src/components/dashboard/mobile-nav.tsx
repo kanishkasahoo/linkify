@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
 import { Menu } from "lucide-react";
 import type { Route } from "next";
 import Link from "next/link";
+import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -42,7 +42,7 @@ export function MobileNav({ items, className }: MobileNavProps) {
           <Menu />
         </Button>
       </DialogTrigger>
-      <DialogContent className="top-0 left-0 h-[100dvh] w-[85vw] max-w-[320px] translate-x-0 translate-y-0 rounded-none border-r bg-card p-5 pr-10 data-[state=open]:slide-in-from-left-6 data-[state=closed]:slide-out-to-left-6 sm:w-[320px] sm:rounded-none">
+      <DialogContent className="top-0 left-0 h-[100svh] max-h-[100svh] w-[82vw] max-w-[280px] translate-x-0 translate-y-0 overflow-x-hidden rounded-none border-r bg-card p-4 pr-6 data-[state=open]:slide-in-from-left-6 data-[state=closed]:slide-out-to-left-6 sm:w-[320px] sm:max-w-[320px] sm:rounded-none">
         <DialogHeader>
           <DialogTitle>Navigation</DialogTitle>
         </DialogHeader>

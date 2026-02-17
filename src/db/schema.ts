@@ -1,14 +1,14 @@
+import { relations } from "drizzle-orm";
 import {
+  boolean,
+  index,
   pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
   uuid,
   varchar,
-  text,
-  boolean,
-  timestamp,
-  index,
-  uniqueIndex,
 } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
 
 // Links table - Short URL definitions
 export const links = pgTable(
@@ -30,6 +30,12 @@ export const links = pgTable(
     uniqueIndex("links_slug_unique").on(table.slug),
     index("links_is_active_idx").on(table.isActive),
     index("links_created_at_idx").on(table.createdAt),
+    index("links_slug_active_expires_idx").on(
+      table.slug,
+      table.isActive,
+      table.expiresAt,
+    ),
+    index("links_expires_at_idx").on(table.expiresAt),
   ],
 );
 
@@ -52,6 +58,7 @@ export const clicks = pgTable(
     index("clicks_clicked_at_idx").on(table.clickedAt),
     index("clicks_country_idx").on(table.country),
     index("clicks_link_id_clicked_at_idx").on(table.linkId, table.clickedAt),
+    index("clicks_referrer_idx").on(table.referrer),
   ],
 );
 

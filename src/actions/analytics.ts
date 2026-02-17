@@ -1,20 +1,11 @@
 "use server";
 
-import {
-  and,
-  asc,
-  desc,
-  eq,
-  gte,
-  gt,
-  isNull,
-  or,
-  sql,
-} from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, isNull, or, sql } from "drizzle-orm";
 
 import { db } from "@/db";
 import { clicks, links } from "@/db/schema";
 import { requireAuth } from "@/lib/auth-utils";
+import { cache, cacheKeys, cacheTTL } from "@/lib/cache";
 import { DateRangeSchema, LinkIdSchema } from "@/lib/validations";
 import type { DashboardStats, DateRange, LinkAnalytics } from "@/types";
 
@@ -40,9 +31,10 @@ const normalizeReferrer = (value: string | null) => {
   }
 
   try {
-    const url = value.startsWith("http://") || value.startsWith("https://")
-      ? new URL(value)
-      : new URL(`https://${value}`);
+    const url =
+      value.startsWith("http://") || value.startsWith("https://")
+        ? new URL(value)
+        : new URL(`https://${value}`);
     return url.hostname || null;
   } catch {
     return null;
@@ -51,6 +43,14 @@ const normalizeReferrer = (value: string | null) => {
 
 export async function getDashboardStats(): Promise<DashboardStats> {
   await requireAuth();
+
+  // Check cache first
+  const cacheKey = cacheKeys.stats();
+  const cached = cache.get<DashboardStats>(cacheKey);
+
+  if (cached) {
+    return cached;
+  }
 
   const now = new Date();
   const clickCount = sql<number>`count(${clicks.id})`;
@@ -85,7 +85,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
       .limit(1),
   ]);
 
-  return {
+  const stats = {
     totalLinks: totalLinksResult[0]?.count ?? 0,
     activeLinks: activeLinksResult[0]?.count ?? 0,
     totalClicks: totalClicksResult[0]?.count ?? 0,
@@ -97,6 +97,11 @@ export async function getDashboardStats(): Promise<DashboardStats> {
         }
       : null,
   };
+
+  // Cache for 1 minute
+  cache.set(cacheKey, stats, cacheTTL.stats);
+
+  return stats;
 }
 
 export async function getLinkAnalytics(

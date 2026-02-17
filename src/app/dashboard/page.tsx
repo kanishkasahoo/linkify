@@ -17,6 +17,7 @@ import {
 import { db } from "@/db";
 import { clicks, links } from "@/db/schema";
 import { requireAuth } from "@/lib/auth-utils";
+import { truncateUrl } from "@/lib/utils";
 
 const toIsoDate = (value: Date | string) => {
   const date = value instanceof Date ? value : new Date(value);
@@ -138,8 +139,10 @@ export default async function DashboardPage() {
                         {link.slug}
                       </Link>
                     </TableCell>
-                    <TableCell className="max-w-[320px] truncate text-sm text-foreground">
-                      <span title={link.url}>{link.url}</span>
+                    <TableCell className="max-w-[320px] text-sm text-foreground">
+                      <span className="block truncate" title={link.url}>
+                        {truncateUrl(link.url, 48)}
+                      </span>
                     </TableCell>
                     <TableCell className="text-right text-sm text-foreground">
                       {link.clickCount}

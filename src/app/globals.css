@@ -139,6 +139,18 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
+
+  html,
+  body {
+    @apply overflow-x-hidden;
+    max-width: 100vw;
+    position: relative;
+  }
+
+  /* Prevent layout shift when scrollbar appears/disappears */
+  html {
+    overflow-y: scroll;
+  }
 }
 
 /* Monospace text for slugs and URLs */

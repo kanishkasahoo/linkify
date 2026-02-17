@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
-import type { ReactNode } from "react";
 import { Download, QrCode } from "lucide-react";
+import type { ReactNode } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { generateQRCode } from "@/actions/qr";
@@ -110,7 +110,7 @@ export function QrDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="space-y-4 min-w-0">
           <div className="flex items-center justify-center rounded-lg border border-border bg-card p-4">
             {dataUrl ? (
               <img
@@ -123,14 +123,18 @@ export function QrDialog({
             )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="font-mono text-sm text-foreground">
+          <div className="flex flex-wrap items-center gap-2 min-w-0 overflow-hidden">
+            <span className="font-mono text-sm text-foreground break-all min-w-0 flex-1">
               {shortUrl}
             </span>
             <CopyButton value={shortUrl} label="Copy short URL" size="sm" />
           </div>
 
-          <Button type="button" onClick={handleDownload} disabled={!dataUrl || isPending}>
+          <Button
+            type="button"
+            onClick={handleDownload}
+            disabled={!dataUrl || isPending}
+          >
             <Download />
             Download PNG
           </Button>

@@ -5,6 +5,7 @@ import { and, eq, gt, isNull, or } from "drizzle-orm";
 import { db } from "@/db";
 import { links } from "@/db/schema";
 import { requireAuth } from "@/lib/auth-utils";
+import { cache, cacheKeys, cacheTTL } from "@/lib/cache";
 import { generateQrCodeDataUrl } from "@/lib/qr";
 import { SlugSchema } from "@/lib/validations";
 import type { ActionResult } from "@/types";
@@ -40,6 +41,14 @@ export async function generateQRCode(
   }
 
   try {
+    // Check cache first
+    const cacheKey = cacheKeys.qr(parsed.data);
+    const cached = cache.get<{ dataUrl: string; shortUrl: string }>(cacheKey);
+
+    if (cached) {
+      return { success: true, data: cached };
+    }
+
     const now = new Date();
     const result = await db
       .select({ slug: links.slug })
@@ -61,7 +70,12 @@ export async function generateQRCode(
     const shortUrl = `${baseUrl}/${parsed.data}`;
     const dataUrl = await generateQrCodeDataUrl(shortUrl);
 
-    return { success: true, data: { dataUrl, shortUrl } };
+    const qrData = { dataUrl, shortUrl };
+
+    // Cache the QR code (they never change)
+    cache.set(cacheKey, qrData, cacheTTL.qr);
+
+    return { success: true, data: qrData };
   } catch (error) {
     return {
       success: false,
