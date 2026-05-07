@@ -1,6 +1,6 @@
 # Linkify
 
-Linkify is a single-user link shortener built with Next.js and deployed on Vercel. It combines a fast public redirect layer with a private dashboard for managing links and viewing analytics.
+Linkify is a single user link shortener built with Next.js and deployed on Vercel. It combines a fast public redirect layer with a private dashboard for managing links and viewing analytics.
 
 ## Key Features
 
