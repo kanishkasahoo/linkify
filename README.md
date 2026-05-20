@@ -72,10 +72,12 @@ The app runs at `http://localhost:3000`.
 Run the app and a local Postgres database:
 
 ```bash
-docker compose up --build
+docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
 ```
 
-For Docker, either export the GitHub OAuth variables in your shell, put them in a Compose `.env` file, or run Compose with `--env-file .env.local`. Only the variables explicitly listed in `compose.yaml` are passed to the app container. If you access the container through a domain or non-localhost address, set `APP_URL` and `AUTH_GITHUB_REDIRECT_URI` to that same public origin.
+The base `docker-compose.yml` is safe for Dokploy and other reverse-proxy deployments: it exposes container ports to the Docker network without binding host ports. The local override publishes `3000` and `5432` on your machine.
+
+For Docker, either export the GitHub OAuth variables in your shell, put them in a Compose `.env` file, or run Compose with `--env-file .env.local`. Only the variables explicitly listed in `docker-compose.yml` are passed to the app container. If you access the container through a domain or non-localhost address, set `APP_URL` and `AUTH_GITHUB_REDIRECT_URI` to that same public origin.
 
 The Docker image runs checked-in SQL migrations automatically before starting the web server. To apply schema migrations manually from the host:
 
