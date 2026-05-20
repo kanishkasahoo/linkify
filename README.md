@@ -77,7 +77,7 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
 
 The base `docker-compose.yml` is safe for Dokploy and other reverse-proxy deployments: it exposes container ports to the Docker network without binding host ports. The local override publishes `3000` and `5432` on your machine.
 
-`docker-compose.dokploy.yml` is the Dokploy-specific compose file for `go.ksahoo.com`. It attaches the app to `dokploy-network` and declares explicit Traefik labels for container port `3000`.
+`docker-compose.dokploy.yml` is the Dokploy-specific compose file for the private Postgres service. In Dokploy, deploy the web app as a Dockerfile application and point it at `postgres://linkify:linkify@postgres:5432/linkify`.
 
 For Docker, either export the GitHub OAuth variables in your shell, put them in a Compose `.env` file, or run Compose with `--env-file .env.local`. Only the variables explicitly listed in `docker-compose.yml` are passed to the app container. If you access the container through a domain or non-localhost address, set `APP_URL` and `AUTH_GITHUB_REDIRECT_URI` to that same public origin.
 
