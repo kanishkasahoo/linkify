@@ -1,0 +1,51 @@
+services:
+  app:
+    build: .
+    depends_on:
+      - postgres
+    environment:
+      NODE_ENV: production
+      SESSION_SECRET: ${SESSION_SECRET:-local-development-session-secret-change-me}
+      AUTH_GITHUB_ID: ${AUTH_GITHUB_ID:-}
+      AUTH_GITHUB_SECRET: ${AUTH_GITHUB_SECRET:-}
+      AUTH_GITHUB_REDIRECT_URI: ${AUTH_GITHUB_REDIRECT_URI:-https://go.ksahoo.com/auth/github/callback}
+      AUTHORIZED_GITHUB_ID: ${AUTHORIZED_GITHUB_ID:-}
+      POSTGRES_URL: postgres://linkify:linkify@postgres:5432/linkify
+      POSTGRES_URL_NON_POOLING: postgres://linkify:linkify@postgres:5432/linkify
+      APP_URL: ${APP_URL:-https://go.ksahoo.com}
+    expose:
+      - "3000"
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=dokploy-network
+      - traefik.http.routers.linkify-web.rule=Host(`go.ksahoo.com`)
+      - traefik.http.routers.linkify-web.entrypoints=web
+      - traefik.http.routers.linkify-web.middlewares=redirect-to-https@file
+      - traefik.http.routers.linkify-web.service=linkify-web
+      - traefik.http.services.linkify-web.loadbalancer.server.port=3000
+      - traefik.http.routers.linkify-websecure.rule=Host(`go.ksahoo.com`)
+      - traefik.http.routers.linkify-websecure.entrypoints=websecure
+      - traefik.http.routers.linkify-websecure.tls.certresolver=letsencrypt
+      - traefik.http.routers.linkify-websecure.service=linkify-websecure
+      - traefik.http.services.linkify-websecure.loadbalancer.server.port=3000
+    networks:
+      - default
+      - dokploy-network
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: linkify
+      POSTGRES_USER: linkify
+      POSTGRES_PASSWORD: linkify
+    expose:
+      - "5432"
+    volumes:
+      - linkify-postgres:/var/lib/postgresql/data
+
+volumes:
+  linkify-postgres:
+
+networks:
+  dokploy-network:
+    external: true
