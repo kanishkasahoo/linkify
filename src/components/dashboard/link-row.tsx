@@ -1,7 +1,5 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { toast } from "sonner";
 import {
   Copy,
   MoreHorizontal,
@@ -10,8 +8,10 @@ import {
   ToggleRight,
   Trash2,
 } from "lucide-react";
+import { useEffect, useState, useTransition } from "react";
+import { useFetcher } from "react-router";
+import { toast } from "sonner";
 
-import { deleteLink, toggleLinks } from "@/actions/links";
 import { LinkFormDialog } from "@/components/dashboard/link-form";
 import { QrDialog } from "@/components/dashboard/qr-dialog";
 import { CopyButton } from "@/components/shared/copy-button";
@@ -54,6 +54,7 @@ type LinkActionsProps = {
 };
 
 export function LinkActions({ link, appUrl, className }: LinkActionsProps) {
+  const fetcher = useFetcher<{ success: boolean; error?: string }>();
   const [isPending, startTransition] = useTransition();
   const [editOpen, setEditOpen] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
@@ -71,15 +72,26 @@ export function LinkActions({ link, appUrl, className }: LinkActionsProps) {
     }
   };
 
-  const handleToggle = () => {
-    startTransition(async () => {
-      const result = await toggleLinks([link.id], !link.isActive);
-      if (!result.success) {
-        toast.error(result.error);
-        return;
-      }
+  useEffect(() => {
+    if (!fetcher.data) {
+      return;
+    }
+    if (!fetcher.data.success) {
+      toast.error(fetcher.data.error ?? "Action failed");
+      return;
+    }
+    toast.success("Link updated");
+  }, [fetcher.data]);
 
-      toast.success(!link.isActive ? "Link activated" : "Link deactivated");
+  const handleToggle = () => {
+    startTransition(() => {
+      const data = new FormData();
+      data.set("intent", "toggle");
+      data.set("isActive", String(!link.isActive));
+      fetcher.submit(data, {
+        method: "post",
+        action: `/dashboard/links/${link.id}`,
+      });
     });
   };
 
@@ -88,14 +100,13 @@ export function LinkActions({ link, appUrl, className }: LinkActionsProps) {
       return;
     }
 
-    startTransition(async () => {
-      const result = await deleteLink(link.id);
-      if (!result.success) {
-        toast.error(result.error);
-        return;
-      }
-
-      toast.success("Link deleted");
+    startTransition(() => {
+      const data = new FormData();
+      data.set("intent", "delete");
+      fetcher.submit(data, {
+        method: "post",
+        action: `/dashboard/links/${link.id}`,
+      });
     });
   };
 
@@ -106,6 +117,7 @@ export function LinkActions({ link, appUrl, className }: LinkActionsProps) {
         appUrl={appUrl}
         open={editOpen}
         onOpenChange={setEditOpen}
+        action={`/dashboard/links/${link.id}`}
         initialValues={{
           id: link.id,
           url: link.url,
@@ -114,7 +126,12 @@ export function LinkActions({ link, appUrl, className }: LinkActionsProps) {
           isActive: link.isActive,
         }}
       />
-      <QrDialog slug={link.slug} appUrl={appUrl} open={qrOpen} onOpenChange={setQrOpen} />
+      <QrDialog
+        slug={link.slug}
+        appUrl={appUrl}
+        open={qrOpen}
+        onOpenChange={setQrOpen}
+      />
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="ghost" size="icon" aria-label="Link actions">
@@ -133,7 +150,10 @@ export function LinkActions({ link, appUrl, className }: LinkActionsProps) {
             <QrCode />
             QR code
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={handleToggle} disabled={isPending}>
+          <DropdownMenuItem
+            onClick={handleToggle}
+            disabled={isPending || fetcher.state !== "idle"}
+          >
             {link.isActive ? <ToggleLeft /> : <ToggleRight />}
             {link.isActive ? "Deactivate" : "Activate"}
           </DropdownMenuItem>
@@ -141,7 +161,7 @@ export function LinkActions({ link, appUrl, className }: LinkActionsProps) {
           <DropdownMenuItem
             onClick={handleDelete}
             className="text-destructive"
-            disabled={isPending}
+            disabled={isPending || fetcher.state !== "idle"}
           >
             <Trash2 />
             Delete

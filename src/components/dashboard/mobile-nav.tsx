@@ -1,9 +1,8 @@
 "use client";
 
 import { Menu } from "lucide-react";
-import type { Route } from "next";
-import Link from "next/link";
 import { useState } from "react";
+import { Link } from "react-router";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -18,7 +17,7 @@ import { cn } from "@/lib/utils";
 
 type NavItem = {
   label: string;
-  href: Route;
+  href: string;
   icon?: React.ReactNode;
 };
 
@@ -50,7 +49,7 @@ export function MobileNav({ items, className }: MobileNavProps) {
           {items.map((item) => (
             <DialogClose asChild key={item.href}>
               <Link
-                href={item.href}
+                to={item.href}
                 className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-muted-foreground transition hover:bg-accent hover:text-foreground"
               >
                 {item.icon}

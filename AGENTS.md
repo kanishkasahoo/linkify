@@ -1,40 +1,29 @@
 # AGENTS.md — Linkify
 
-> AI agent instructions for the Linkify project. Read this file first before making any changes.
+> AI agent instructions for the Linkify project. Read this file first before making changes.
 
 ## Project Summary
 
-Linkify is a **personal link shortener** built with Next.js 15+ (App Router) and deployed on Vercel. It serves two workloads:
+Linkify is a **personal link shortener** built with **React Router v7 Framework Mode** and deployed as a Node.js application, typically in Docker. It serves two workloads:
 
-1. **Public redirect engine** — Edge-executed slug lookups that redirect visitors via HTTP 307 with async analytics recording
-2. **Private admin dashboard** — Server-rendered dark-mode UI for link management, analytics, and QR code generation
+1. **Public redirect engine** — slug lookups that redirect visitors via HTTP 307 with asynchronous analytics recording
+2. **Private admin dashboard** — server-rendered dark-mode UI for link management, analytics, and QR code generation
 
-Single-user application. One admin authenticated via GitHub OAuth (locked to a specific GitHub account ID).
-
-## Detailed Documentation
-
-Consult these files for comprehensive specifications:
-
-- **`.docs/requirements.md`** — Full functional and non-functional requirements in EARS format
-- **`.docs/architecture.md`** — System architecture, technology stack, data flow, and deployment
-- **`.docs/design.md`** — Database schema, API design, UI layouts, validation rules, project structure
-- **`.docs/implementation-plan.md`** — Phase-by-phase build plan with exit criteria
-
-**Always read the relevant `.docs/` file before implementing a feature.**
+Single-user application. One admin authenticates through GitHub OAuth and is locked to a specific GitHub account ID.
 
 ## Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
-| Framework | Next.js 15+ (App Router, Server Components, Server Actions) |
-| Language | TypeScript (strict mode) |
-| Database | Vercel Postgres (Neon-backed) |
+| Framework | React Router v7 Framework Mode, Vite, SSR |
+| Language | TypeScript strict mode |
+| Database | PostgreSQL |
 | ORM | Drizzle ORM with drizzle-kit for migrations |
-| Auth | Auth.js v5 (next-auth@beta) with GitHub OAuth provider |
+| Auth | GitHub OAuth with React Router cookie sessions |
 | Styling | Tailwind CSS v4, dark mode only |
-| UI Components | shadcn/ui (Radix UI primitives, copy-pasted into project) |
+| UI Components | shadcn/ui style Radix primitives copied into project |
 | Charts | Recharts |
-| QR Codes | qrcode (npm) |
+| QR Codes | qrcode |
 | Slug Generation | nanoid |
 | Validation | zod |
 | Icons | lucide-react |
@@ -42,46 +31,58 @@ Consult these files for comprehensive specifications:
 
 ## Project Structure
 
-```
+```text
+app/
+├── root.tsx                 ← React Router document, styles, outlet, errors
+├── routes.ts                ← Route configuration
+└── routes/                  ← Route modules with loaders/actions
+    ├── home.tsx
+    ├── login.tsx
+    ├── auth.github.tsx
+    ├── auth.github.callback.tsx
+    ├── logout.tsx
+    ├── dashboard.tsx
+    ├── dashboard._index.tsx
+    ├── dashboard.links.tsx
+    ├── dashboard.links.$id.tsx
+    ├── resources.qr.$slug.tsx
+    ├── healthz.ts
+    └── $.tsx               ← Public short-link redirect route
 src/
-├── app/                    ← Next.js App Router pages and routes
-│   ├── [slug]/route.ts     ← Edge redirect handler (runtime: 'edge')
-│   ├── login/page.tsx      ← Login page
-│   ├── dashboard/          ← Protected admin UI
-│   │   ├── page.tsx        ← Dashboard home with stats
-│   │   └── links/          ← Link management + detail pages
-│   └── api/auth/           ← Auth.js route handlers
-├── actions/                ← Server Actions for mutations and queries
-├── auth.ts                 ← Auth.js configuration
-├── middleware.ts           ← Route protection (dashboard only)
 ├── components/
-│   ├── ui/                 ← shadcn/ui base components
-│   ├── dashboard/          ← Dashboard-specific components
-│   ├── analytics/          ← Chart and analytics components
-│   └── shared/             ← Reusable components (copy-button, badges, etc.)
+│   ├── ui/
+│   ├── dashboard/
+│   ├── analytics/
+│   └── shared/
 ├── db/
-│   ├── index.ts            ← Database client singleton
-│   ├── schema.ts           ← Drizzle table definitions
-│   └── migrations/         ← Generated SQL migrations
+│   ├── index.ts
+│   ├── schema.ts
+│   └── migrations/
 ├── lib/
-│   ├── slug.ts             ← NanoID generation + validation
-│   ├── qr.ts               ← QR code generation
-│   ├── validations.ts      ← Zod schemas
-│   ├── constants.ts        ← Reserved slugs, config
-│   └── utils.ts            ← cn(), formatters
-└── types/index.ts          ← Shared TypeScript types
+│   ├── auth.server.ts
+│   ├── slug.ts
+│   ├── qr.ts
+│   ├── validations.ts
+│   ├── constants.ts
+│   └── utils.ts
+├── services/               ← Server-only business logic used by loaders/actions
+└── types/index.ts
 ```
 
 ## Build & Dev Commands
 
 ```bash
-pnpm install              # Install dependencies
-pnpm dev                  # Start dev server (localhost:3000)
-pnpm build                # Production build
-pnpm lint                 # Run ESLint
-pnpm drizzle-kit push     # Push schema changes to database
-pnpm drizzle-kit studio   # Open Drizzle Studio (DB browser)
-pnpm drizzle-kit generate # Generate migration SQL files
+pnpm install
+pnpm dev
+pnpm build
+pnpm start
+pnpm typecheck
+pnpm lint
+pnpm db:push
+pnpm db:migrate
+pnpm db:generate
+pnpm db:studio
+docker compose up --build
 ```
 
 ## Database Schema
@@ -89,31 +90,37 @@ pnpm drizzle-kit generate # Generate migration SQL files
 Two tables with a one-to-many relationship:
 
 **`links`** — Short URL definitions
-- `id` (UUID PK), `slug` (VARCHAR UNIQUE), `url` (TEXT), `is_active` (BOOLEAN), `expires_at` (TIMESTAMP nullable), `created_at`, `updated_at`
+- `id` UUID PK
+- `slug` VARCHAR unique
+- `url` TEXT
+- `is_active` BOOLEAN
+- `expires_at` TIMESTAMP nullable
+- `created_at`, `updated_at`
 
-**`clicks`** — Analytics events (one per redirect)
-- `id` (UUID PK), `link_id` (UUID FK → links.id ON DELETE CASCADE), `country` (VARCHAR(2) nullable), `referrer` (TEXT nullable), `clicked_at` (TIMESTAMP)
-
-Key indexes: unique on `slug`, composite on `(link_id, clicked_at)` for analytics queries.
+**`clicks`** — Analytics events
+- `id` UUID PK
+- `link_id` UUID FK to `links.id` ON DELETE CASCADE
+- `country` VARCHAR(2) nullable
+- `referrer` TEXT nullable
+- `clicked_at` TIMESTAMP
 
 ## Architecture Patterns
 
-### Redirect Flow (Edge Runtime)
-The `[slug]/route.ts` handler runs at the edge. It queries the database for the slug, validates active status and expiration, returns a 307 redirect, and uses `waitUntil()` from `@vercel/functions` to write analytics asynchronously (non-blocking).
+### Redirect Flow
+
+The `/:slug` resource route queries the database, validates active/expiration state, sanitizes the target URL, returns a 307 redirect, and launches analytics insertion in a detached promise. Analytics writes must never block redirects.
 
 ### Authentication
-Auth.js v5 with GitHub OAuth. The `signIn` callback checks `profile.id` against the `AUTHORIZED_GITHUB_ID` env var. Middleware protects `/dashboard/*` routes. Server actions use a `requireAuth()` helper.
 
-### Server Actions
-All mutations (create, update, delete, toggle links) are Server Actions in `src/actions/`. They follow this pattern:
-1. Call `requireAuth()` to verify session
-2. Validate input with Zod
-3. Execute database operation with Drizzle
-4. Call `revalidatePath()` to refresh UI
-5. Return `{ success: true, data }` or `{ success: false, error: string }`
+GitHub OAuth is implemented in React Router route modules. Cookie sessions store the authorized GitHub user after `/auth/github/callback` verifies `AUTHORIZED_GITHUB_ID`. Protected dashboard loaders/actions call `requireUser(request)`.
+
+### Loaders And Actions
+
+Route loaders fetch server-side data. Route actions handle mutations. Business logic lives in `src/services/*.server.ts`, while route modules handle request parsing, auth checks, and response shaping.
 
 ### Client Components
-Only use `"use client"` for interactive components: forms, charts, toasts, dialogs, bulk selection. Everything else should be a Server Component.
+
+Interactive components use React Router primitives such as `Link`, `useNavigate`, `useSearchParams`, and `useFetcher`. Prefer server route loaders/actions for data and mutations.
 
 ## Design System
 
@@ -127,7 +134,7 @@ Dark mode only. Industrial aesthetic. Key colors:
 - Success: green-500 (#22c55e)
 - Warning: amber-500 (#f59e0b)
 
-Fonts: Inter (sans), JetBrains Mono or Geist Mono (monospace for slugs/URLs).
+Fonts: Inter for sans, JetBrains Mono for slugs and URLs.
 
 ## Validation Rules
 
@@ -140,22 +147,21 @@ Fonts: Inter (sans), JetBrains Mono or Geist Mono (monospace for slugs/URLs).
 
 | Variable | Description |
 |----------|-------------|
-| `AUTH_SECRET` | Auth.js session secret |
+| `SESSION_SECRET` | Cookie session secret |
 | `AUTH_GITHUB_ID` | GitHub OAuth client ID |
 | `AUTH_GITHUB_SECRET` | GitHub OAuth client secret |
+| `AUTH_GITHUB_REDIRECT_URI` | Exact GitHub OAuth callback URL registered for the app |
 | `AUTHORIZED_GITHUB_ID` | GitHub user ID allowed to log in |
-| `POSTGRES_URL` | Vercel Postgres connection string (pooled) |
-| `POSTGRES_URL_NON_POOLING` | Direct connection for migrations |
-| `NEXT_PUBLIC_APP_URL` | Public short URL domain (e.g., https://lnk.example.com) |
+| `POSTGRES_URL` | PostgreSQL connection string |
+| `POSTGRES_URL_NON_POOLING` | Direct PostgreSQL connection for migrations |
+| `APP_URL` | Public short URL origin |
 
 ## Important Conventions
 
-- All times are stored and displayed in UTC with timezone
-- Slugs are case-sensitive
-- Analytics writes must never block redirects
-- Use `revalidatePath` after mutations to keep the dashboard fresh
-- Prefer Server Components; only use Client Components for interactivity
-- Always validate on both client (UX) and server (security) side
-- Handle errors gracefully — return error objects, don't throw from Server Actions
-- QR codes are generated server-side and returned as data URLs
-- Pagination state lives in URL search params (bookmarkable)
+- All times are stored and displayed in UTC.
+- Slugs are case-sensitive.
+- Analytics writes must never block redirects.
+- Always validate on both client and server side.
+- Route actions return `{ success: true, data }` or `{ success: false, error }`.
+- QR codes are generated server-side and returned as data URLs.
+- Pagination state lives in URL search params.

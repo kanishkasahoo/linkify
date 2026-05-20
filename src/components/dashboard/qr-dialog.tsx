@@ -5,7 +5,6 @@ import type { ReactNode } from "react";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 
-import { generateQRCode } from "@/actions/qr";
 import { CopyButton } from "@/components/shared/copy-button";
 import { Button } from "@/components/ui/button";
 import {
@@ -57,13 +56,18 @@ export function QrDialog({
     setDataUrl(null);
 
     startTransition(async () => {
-      const result = await generateQRCode(slug);
+      const response = await fetch(`/resources/qr/${encodeURIComponent(slug)}`);
+      const result = (await response.json()) as {
+        success: boolean;
+        data?: { dataUrl: string };
+        error?: string;
+      };
       if (!active) {
         return;
       }
 
-      if (!result.success) {
-        toast.error(result.error);
+      if (!response.ok || !result.success || !result.data) {
+        toast.error(result.error ?? "Unable to generate QR code");
         return;
       }
 

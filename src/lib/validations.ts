@@ -1,13 +1,13 @@
 import { z } from "zod";
 
 import {
-  DEFAULT_PAGE_SIZE,
   DANGEROUS_PROTOCOLS,
+  DEFAULT_PAGE_SIZE,
   SLUG_MAX_LENGTH,
   SLUG_MIN_LENGTH,
   URL_MAX_LENGTH,
 } from "@/lib/constants";
-import { SLUG_REGEX, isReservedSlug } from "@/lib/slug";
+import { isReservedSlug, SLUG_REGEX } from "@/lib/slug";
 
 const isSafeUrl = (value: string) => {
   const trimmed = value.trim();

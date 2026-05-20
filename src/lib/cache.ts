@@ -1,6 +1,6 @@
 /**
  * Simple in-memory cache with TTL
- * For production, replace with Redis/Vercel KV
+ * For production, replace with Redis or another shared cache.
  */
 
 type CacheEntry<T> = {

@@ -1,10 +1,16 @@
 "use client";
 
 import { RotateCw } from "lucide-react";
-import { useEffect, useMemo, useState, useTransition } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useTransition,
+} from "react";
+import { useFetcher } from "react-router";
 import { toast } from "sonner";
 
-import { createLink, updateLink } from "@/actions/links";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -37,6 +43,7 @@ type LinkFormDialogProps = {
   appUrl: string;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  action?: string;
   initialValues?: {
     id: string;
     url: string;
@@ -73,9 +80,14 @@ export function LinkFormDialog({
   appUrl,
   open,
   onOpenChange,
+  action,
   initialValues,
   className,
 }: LinkFormDialogProps) {
+  const fetcher = useFetcher<{
+    success: boolean;
+    error?: string;
+  }>();
   const [internalOpen, setInternalOpen] = useState(false);
   const [formValues, setFormValues] = useState<LinkFormValues>(defaultValues);
   const [errors, setErrors] = useState<LinkFormErrors>({});
@@ -83,12 +95,15 @@ export function LinkFormDialog({
   const isControlled = open !== undefined;
   const dialogOpen = isControlled ? open : internalOpen;
 
-  const handleOpenChange = (nextOpen: boolean) => {
-    if (!isControlled) {
-      setInternalOpen(nextOpen);
-    }
-    onOpenChange?.(nextOpen);
-  };
+  const handleOpenChange = useCallback(
+    (nextOpen: boolean) => {
+      if (!isControlled) {
+        setInternalOpen(nextOpen);
+      }
+      onOpenChange?.(nextOpen);
+    },
+    [isControlled, onOpenChange],
+  );
 
   useEffect(() => {
     if (!dialogOpen) {
@@ -116,6 +131,20 @@ export function LinkFormDialog({
 
     return `${appUrl.replace(/\/$/, "")}/${previewSlug}`;
   }, [appUrl, previewSlug]);
+
+  useEffect(() => {
+    if (!fetcher.data) {
+      return;
+    }
+
+    if (!fetcher.data.success) {
+      toast.error(fetcher.data.error ?? "Unable to save link");
+      return;
+    }
+
+    toast.success(mode === "create" ? "Link created" : "Link updated");
+    handleOpenChange(false);
+  }, [fetcher.data, handleOpenChange, mode]);
 
   const validate = () => {
     const nextErrors: LinkFormErrors = {};
@@ -147,33 +176,26 @@ export function LinkFormDialog({
       return;
     }
 
-    startTransition(async () => {
+    startTransition(() => {
       const expiresAtValue = formValues.expiresAt.trim();
+      const data = new FormData();
+      data.set("intent", mode === "create" ? "create" : "update");
+      data.set("url", formValues.url.trim());
+      data.set("slug", formValues.slug.trim());
+      data.set(
+        "expiresAt",
+        mode === "create" ? expiresAtValue : expiresAtValue || "",
+      );
+      data.set("isActive", String(formValues.isActive));
 
-      const payload = {
-        url: formValues.url.trim(),
-        slug: formValues.slug.trim() || undefined,
-        expiresAt:
-          mode === "create"
-            ? expiresAtValue || undefined
-            : expiresAtValue || null,
-        isActive: formValues.isActive,
-      };
-
-      const result =
-        mode === "create"
-          ? await createLink(payload)
-          : await updateLink(initialValues?.id, payload);
-
-      if (!result.success) {
-        toast.error(result.error);
-        return;
-      }
-
-      toast.success(mode === "create" ? "Link created" : "Link updated");
-      if (mode === "create") {
-        handleOpenChange(false);
-      }
+      fetcher.submit(data, {
+        method: "post",
+        action:
+          action ??
+          (mode === "edit" && initialValues?.id
+            ? `/dashboard/links/${initialValues.id}`
+            : "/dashboard/links"),
+      });
     });
   };
 
@@ -278,11 +300,14 @@ export function LinkFormDialog({
               type="button"
               variant="outline"
               onClick={() => handleOpenChange(false)}
-              disabled={isPending}
+              disabled={isPending || fetcher.state !== "idle"}
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={isPending}>
+            <Button
+              type="submit"
+              disabled={isPending || fetcher.state !== "idle"}
+            >
               {mode === "create" ? "Create link" : "Save changes"}
             </Button>
           </DialogFooter>

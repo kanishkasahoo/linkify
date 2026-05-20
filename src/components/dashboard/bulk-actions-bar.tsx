@@ -1,9 +1,9 @@
 "use client";
 
-import { useTransition } from "react";
+import { useEffect, useTransition } from "react";
+import { useFetcher } from "react-router";
 import { toast } from "sonner";
 
-import { deleteLinks, toggleLinks } from "@/actions/links";
 import { Button } from "@/components/ui/button";
 
 type BulkActionsBarProps = {
@@ -15,22 +15,28 @@ export function BulkActionsBar({
   selectedIds,
   onClearSelection,
 }: BulkActionsBarProps) {
+  const fetcher = useFetcher<{ success: boolean; error?: string }>();
   const [isPending, startTransition] = useTransition();
 
-  const handleToggle = (isActive: boolean) => {
-    startTransition(async () => {
-      const result = await toggleLinks(selectedIds, isActive);
-      if (!result.success) {
-        toast.error(result.error);
-        return;
-      }
+  useEffect(() => {
+    if (!fetcher.data) {
+      return;
+    }
+    if (!fetcher.data.success) {
+      toast.error(fetcher.data.error ?? "Bulk action failed");
+      return;
+    }
+    toast.success("Selected links updated");
+    onClearSelection();
+  }, [fetcher.data, onClearSelection]);
 
-      toast.success(
-        isActive
-          ? "Selected links are now active"
-          : "Selected links are now inactive",
-      );
-      onClearSelection();
+  const handleToggle = (isActive: boolean) => {
+    startTransition(() => {
+      const data = new FormData();
+      data.set("intent", "bulk-toggle");
+      data.set("ids", JSON.stringify(selectedIds));
+      data.set("isActive", String(isActive));
+      fetcher.submit(data, { method: "post", action: "/dashboard/links" });
     });
   };
 
@@ -43,15 +49,11 @@ export function BulkActionsBar({
       return;
     }
 
-    startTransition(async () => {
-      const result = await deleteLinks(selectedIds);
-      if (!result.success) {
-        toast.error(result.error);
-        return;
-      }
-
-      toast.success("Links deleted");
-      onClearSelection();
+    startTransition(() => {
+      const data = new FormData();
+      data.set("intent", "bulk-delete");
+      data.set("ids", JSON.stringify(selectedIds));
+      fetcher.submit(data, { method: "post", action: "/dashboard/links" });
     });
   };
 

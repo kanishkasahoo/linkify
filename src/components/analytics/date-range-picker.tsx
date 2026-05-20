@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useNavigate, useSearchParams } from "react-router";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -25,8 +25,8 @@ type DateRangePickerProps = {
 };
 
 export function DateRangePicker({ value, className }: DateRangePickerProps) {
-  const router = useRouter();
-  const searchParams = useSearchParams();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   const params = useMemo(
     () => new URLSearchParams(searchParams.toString()),
@@ -36,7 +36,7 @@ export function DateRangePicker({ value, className }: DateRangePickerProps) {
   const handleSelect = (range: DateRange) => {
     const nextParams = new URLSearchParams(params.toString());
     nextParams.set("range", range);
-    router.push(`?${nextParams.toString()}`);
+    navigate(`?${nextParams.toString()}`);
   };
 
   return (

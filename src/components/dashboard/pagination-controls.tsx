@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { useMemo } from "react";
+import { useNavigate, useSearchParams } from "react-router";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -72,8 +72,8 @@ export function PaginationControls({
   pageSize,
   total,
 }: PaginationControlsProps) {
-  const router = useRouter();
-  const searchParams = useSearchParams();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
@@ -95,7 +95,7 @@ export function PaginationControls({
       }
     });
 
-    router.push(`?${params.toString()}`);
+    navigate(`?${params.toString()}`);
   };
 
   return (

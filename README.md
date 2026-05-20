@@ -1,89 +1,96 @@
 # Linkify
 
-Linkify is a single user link shortener built with Next.js and deployed on Vercel. It combines a fast public redirect layer with a private dashboard for managing links and viewing analytics.
+Linkify is a single-user link shortener built with React Router v7 Framework Mode. It combines a public redirect engine with a private dashboard for managing links, QR codes, and analytics.
 
-## Key Features
+## Features
 
-- Edge redirect handler for low-latency slug resolution and HTTP 307 redirects
-- Private dashboard for creating, editing, activating, expiring, and deleting links
-- Click analytics with time-series charts, country breakdowns, and top referrers
-- Server-side QR code generation for each short link
-- GitHub OAuth sign-in restricted to one authorized GitHub account ID
+- HTTP 307 short-link redirects
+- Asynchronous click analytics recording
+- GitHub OAuth login restricted to one authorized GitHub account ID
+- Link create, edit, delete, activate, deactivate, search, filter, sort, and pagination
+- Dashboard stats, time-series charts, country breakdowns, and top referrers
+- Server-side QR code generation and PNG download
+- Docker and Docker Compose support
 
 ## Tech Stack
 
-- Next.js (App Router, Server Components, Server Actions, Edge runtime)
-- TypeScript (strict mode)
-- Auth.js v5 with GitHub OAuth
-- Vercel Postgres with Drizzle ORM and drizzle-kit
-- Tailwind CSS v4 + shadcn/ui + Radix UI
-- Recharts, Zod, NanoID, Sonner
-
-## Architecture Overview
-
-- Public redirect path: requests to `/{slug}` are handled by `src/app/[slug]/route.ts` at the edge, validated against link state/expiration, and redirected with asynchronous analytics writes
-- Private dashboard path: authenticated routes under `/dashboard` render server-side UI and call Server Actions for mutations and analytics queries
+- React Router v7 Framework Mode, Vite, React 19
+- TypeScript strict mode
+- PostgreSQL with Drizzle ORM and drizzle-kit
+- Tailwind CSS v4, Radix UI primitives, shadcn-style components
+- Recharts, Zod, NanoID, Sonner, qrcode
 
 ## Prerequisites
 
-- Node.js 20+
-- pnpm 9+
-- A PostgreSQL database (Vercel Postgres recommended)
-- A GitHub OAuth app
+- Node.js 22+
+- pnpm 10+
+- PostgreSQL
+- GitHub OAuth app
+- Docker, if using the container workflow
 
-## Getting Started
+## Environment
 
-1. Install dependencies:
-
-```bash
-pnpm install
-```
-
-2. Create your environment file from the example:
+Create `.env.local` from the example:
 
 ```bash
 cp .env.example .env.local
 ```
 
-3. Fill in values in `.env.local`.
-
-4. Start the development server:
+Required values:
 
 ```bash
+SESSION_SECRET=replace-with-a-long-random-secret
+AUTH_GITHUB_ID=github-oauth-client-id
+AUTH_GITHUB_SECRET=github-oauth-client-secret
+AUTH_GITHUB_REDIRECT_URI=http://localhost:3000/auth/github/callback
+AUTHORIZED_GITHUB_ID=numeric-github-user-id
+APP_URL=http://localhost:3000
+```
+
+Local database commands default to `postgres://linkify:linkify@localhost:5432/linkify`, which is the Postgres container published by Compose. Override `POSTGRES_URL` only for a non-local database.
+
+For GitHub OAuth local development, set the callback URL to:
+
+```text
+http://localhost:3000/auth/github/callback
+```
+
+`AUTH_GITHUB_REDIRECT_URI` must exactly match the callback URL configured in the GitHub OAuth app, including scheme, host, port, and path. For example, `http://localhost:3000/auth/github/callback` and `http://127.0.0.1:3000/auth/github/callback` are different values to GitHub.
+
+## Local Development
+
+```bash
+pnpm install
+pnpm db:push
 pnpm dev
 ```
 
-App runs at `http://localhost:3000`.
+The app runs at `http://localhost:3000`.
 
-## Database Setup
+## Docker
 
-Use the existing scripts in `package.json`:
+Run the app and a local Postgres database:
 
 ```bash
-pnpm db:push
-pnpm db:migrate
-pnpm db:generate
-pnpm db:studio
+docker compose up --build
 ```
 
-Recommended local flow:
+For Docker, either export the GitHub OAuth variables in your shell, put them in a Compose `.env` file, or run Compose with `--env-file .env.local`. Only the variables explicitly listed in `compose.yaml` are passed to the app container. If you access the container through a domain or non-localhost address, set `APP_URL` and `AUTH_GITHUB_REDIRECT_URI` to that same public origin.
 
-- Use `pnpm db:push` for fast schema sync during development
-- Use `pnpm db:generate` + `pnpm db:migrate` when maintaining SQL migrations
+The Docker image runs checked-in SQL migrations automatically before starting the web server. To apply schema migrations manually from the host:
 
-## Auth Setup Notes
-
-- Configure `AUTH_GITHUB_ID` and `AUTH_GITHUB_SECRET` from your GitHub OAuth app
-- Set `AUTHORIZED_GITHUB_ID` to the numeric GitHub user ID of the only account that should access `/dashboard`
-- Set `AUTH_SECRET` for session encryption and integrity
+```bash
+pnpm db:migrate
+```
 
 ## Scripts
 
 | Script | Purpose |
 | --- | --- |
-| `pnpm dev` | Start the local Next.js development server |
-| `pnpm build` | Build for production |
-| `pnpm start` | Start the production server |
+| `pnpm dev` | Start React Router dev server |
+| `pnpm build` | Build production client and server bundles |
+| `pnpm start` | Start the production React Router server |
+| `pnpm typecheck` | Generate route types and run TypeScript |
 | `pnpm lint` | Run Biome checks |
 | `pnpm format` | Format code with Biome |
 | `pnpm db:generate` | Generate Drizzle migration files |
@@ -91,31 +98,29 @@ Recommended local flow:
 | `pnpm db:push` | Push schema directly to database |
 | `pnpm db:studio` | Open Drizzle Studio |
 
-## Project Structure
+## Project Layout
 
 ```text
+app/
+  root.tsx                React Router document and app outlet
+  routes.ts               Route config
+  routes/                 Loaders, actions, pages, and resource routes
 src/
-  app/                  Next.js routes (public redirects, login, dashboard)
-  actions/              Server Actions for link and analytics operations
-  components/           Dashboard, analytics, shared, and UI components
-  db/                   Drizzle schema, client setup, and migrations
-  lib/                  Validation, auth helpers, slug and QR utilities
-  types/                Shared TypeScript types
+  components/             Dashboard, analytics, shared, and UI components
+  db/                     Drizzle schema and database client
+  lib/                    Auth, validation, slug, QR, constants, utilities
+  services/               Server-side business logic
+  types/                  Shared TypeScript types
 ```
 
-## Security and Privacy
+## Architecture
 
-- Designed for single-user administration, not multi-tenant access
-- Dashboard access is restricted by GitHub OAuth + `AUTHORIZED_GITHUB_ID`
-- Redirect analytics store only operational fields: `link_id`, `clicked_at`, `country` (optional), and `referrer` (optional)
-- Analytics writes are asynchronous so redirects are not blocked
-
-## Deployment (Vercel)
-
-- Recommended target is Vercel with Vercel Postgres
-- Configure all required environment variables in the Vercel project settings
-- Ensure `NEXT_PUBLIC_APP_URL` matches your production short-link domain
+- Public redirects are handled by `app/routes/$.tsx`, which delegates lookup and analytics to `src/services/redirect.server.ts`.
+- Dashboard routes use React Router loaders for reads and actions for mutations.
+- GitHub OAuth is implemented with `/auth/github` and `/auth/github/callback`.
+- Authentication state is stored in an HTTP-only cookie session.
+- Analytics writes are detached from redirects so slow inserts do not delay visitors.
 
 ## License
 
-This project is licensed under the MIT License. See `LICENSE` for details.
+MIT. See `LICENSE`.

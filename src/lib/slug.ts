@@ -1,10 +1,10 @@
+import { customAlphabet } from "nanoid";
 import {
   RESERVED_SLUGS,
   SLUG_LENGTH,
   SLUG_MAX_LENGTH,
   SLUG_MIN_LENGTH,
 } from "@/lib/constants";
-import { customAlphabet } from "nanoid";
 
 const SLUG_ALPHABET =
   "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";

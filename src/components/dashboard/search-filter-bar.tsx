@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowUpDown, Search } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,8 +28,8 @@ export function SearchFilterBar({
   sortBy,
   sortOrder,
 }: SearchFilterBarProps) {
-  const router = useRouter();
-  const searchParams = useSearchParams();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [query, setQuery] = useState(search ?? "");
 
   useEffect(() => {
@@ -55,7 +55,7 @@ export function SearchFilterBar({
     });
 
     nextParams.set("page", "1");
-    router.push(`?${nextParams.toString()}`);
+    navigate(`?${nextParams.toString()}`);
   };
 
   const handleSubmit = (event: React.FormEvent) => {

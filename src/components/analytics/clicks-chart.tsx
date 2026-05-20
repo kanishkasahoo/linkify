@@ -28,7 +28,11 @@ const formatDate = (value: string) => {
   }).format(date);
 };
 
-export function ClicksChart({ data, height = 260, className }: ClicksChartProps) {
+export function ClicksChart({
+  data,
+  height = 260,
+  className,
+}: ClicksChartProps) {
   if (data.length === 0) {
     return (
       <div
@@ -45,14 +49,14 @@ export function ClicksChart({ data, height = 260, className }: ClicksChartProps)
 
   return (
     <div
-      className={cn(
-        "rounded-lg border border-border bg-card p-4",
-        className,
-      )}
+      className={cn("rounded-lg border border-border bg-card p-4", className)}
       style={{ height }}
     >
       <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={data} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
+        <AreaChart
+          data={data}
+          margin={{ top: 10, right: 16, left: 0, bottom: 0 }}
+        >
           <defs>
             <linearGradient id="clicksFill" x1="0" y1="0" x2="0" y2="1">
               <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.45} />
