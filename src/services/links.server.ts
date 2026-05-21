@@ -15,7 +15,7 @@ import {
 
 import { db } from "@/db";
 import { clicks, links } from "@/db/schema";
-import { cache, cacheKeys } from "@/lib/cache";
+import { cache, cacheKeys, cacheTTL } from "@/lib/cache";
 import { generateSlug, isReservedSlug } from "@/lib/slug";
 import {
   CreateLinkSchema,
@@ -127,7 +127,16 @@ export async function createLink(
       })
       .returning();
 
-    cache.delete(cacheKeys.link(finalSlug));
+    cache.set(
+      cacheKeys.link(finalSlug),
+      {
+        id: inserted[0].id,
+        url: inserted[0].url,
+        isActive: inserted[0].isActive,
+        expiresAt: inserted[0].expiresAt,
+      },
+      cacheTTL.link,
+    );
     cache.delete(cacheKeys.stats());
 
     return { success: true, data: { ...inserted[0], clickCount: 0 } };
