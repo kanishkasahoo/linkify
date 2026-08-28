@@ -119,7 +119,12 @@ export const links = pgTable(
       .notNull()
       .default(sql`'{}'::text[]`),
     passwordHash: text('password_hash'),
+    status: text('status').notNull().default('active'),
+    startsAt: timestamp('starts_at'),
     expiresAt: timestamp('expires_at'),
+    expiredRedirectUrl: text('expired_redirect_url'),
+    maxClicks: integer('max_clicks'),
+    privacyEnabled: boolean('privacy_enabled').notNull().default(false),
     clickCount: integer('click_count').notNull().default(0),
     userId: text('user_id')
       .notNull()
@@ -147,9 +152,11 @@ export const clicks = pgTable(
     deviceType: text('device_type'),
     isBot: boolean('is_bot').notNull().default(false),
     referrer: text('referrer'),
+    visitorHash: text('visitor_hash'),
   },
   (t) => [
     index('clicks_link_ts_idx').on(t.linkId, t.timestamp),
+    index('clicks_link_visitor_idx').on(t.linkId, t.visitorHash),
   ],
 )
 

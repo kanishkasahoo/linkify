@@ -1,5 +1,6 @@
 import { UAParser } from 'ua-parser-js'
 import { isbot } from 'isbot'
+import { createHmac } from 'node:crypto'
 
 export interface ClickMeta {
   ip: string | null
@@ -11,6 +12,7 @@ export interface ClickMeta {
   deviceType: string | null
   isBot: boolean
   referrer: string | null
+  visitorHash: string | null
 }
 
 /**
@@ -18,9 +20,10 @@ export interface ClickMeta {
  * injected headers (x-vercel-ip-country / x-vercel-ip-city); locally they are
  * absent and the fields stay null.
  */
-export function extractClickMeta(request: Request): ClickMeta {
+export function extractClickMeta(request: Request, options: { privacyEnabled?: boolean } = {}): ClickMeta {
   const h = request.headers
   const ua = h.get('user-agent')
+  const ip = h.get(process.env.TRUSTED_IP_HEADER ?? 'x-real-ip')?.slice(0, 64) ?? null
 
   let browser: string | null = null
   let os: string | null = null
@@ -42,15 +45,21 @@ export function extractClickMeta(request: Request): ClickMeta {
     }
   }
 
+  const hashSecret = process.env.ANALYTICS_HASH_SECRET || process.env.BETTER_AUTH_SECRET
+  const visitorHash = hashSecret && (ip || ua)
+    ? createHmac('sha256', hashSecret).update(`${ip ?? ''}\0${ua ?? ''}`).digest('hex')
+    : null
+
   return {
-    ip: h.get(process.env.TRUSTED_IP_HEADER ?? 'x-real-ip')?.slice(0, 64) ?? null,
+    ip: options.privacyEnabled ? null : ip,
     country: h.get('x-vercel-ip-country')?.slice(0, 8) ?? null,
-    city: h.get('x-vercel-ip-city')?.slice(0, 128) ?? null,
-    userAgent: ua?.slice(0, 512) ?? null,
+    city: options.privacyEnabled ? null : h.get('x-vercel-ip-city')?.slice(0, 128) ?? null,
+    userAgent: options.privacyEnabled ? null : ua?.slice(0, 512) ?? null,
     browser: browser?.slice(0, 100) ?? null,
     os: os?.slice(0, 100) ?? null,
     deviceType: deviceType?.slice(0, 50) ?? null,
     isBot: isbot(ua),
     referrer,
+    visitorHash,
   }
 }

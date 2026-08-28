@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { createLink, updateLink, type LinkInput } from '~/lib/links'
+import { createLink, updateLink, type LinkInput, type LinkStatus } from '~/lib/links'
 import type { SafeLink as LinkRow } from '~/lib/links'
+import { applyCampaignParams, EMPTY_CAMPAIGN, readCampaignParams, UTM_FIELDS, type CampaignParams } from '~/lib/campaign'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
@@ -14,6 +15,8 @@ interface Props {
   onOpenChange: (open: boolean) => void
   /** When set, the dialog edits this link; otherwise it creates a new one. */
   link?: LinkRow | null
+  /** Populate from this link but create a new record. */
+  duplicate?: boolean
   onSaved: () => void
 }
 
@@ -24,38 +27,94 @@ function toLocalInputValue(d: Date | string | null | undefined) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
-export function LinkFormDialog({ open, onOpenChange, link, onSaved }: Props) {
-  const editing = Boolean(link)
+const UTM_LABELS: Record<keyof CampaignParams, string> = {
+  utm_source: 'Source', utm_medium: 'Medium', utm_campaign: 'Campaign',
+  utm_term: 'Term', utm_content: 'Content',
+}
+
+interface CampaignPreset { name: string; values: CampaignParams }
+
+export function LinkFormDialog({ open, onOpenChange, link, duplicate = false, onSaved }: Props) {
+  const editing = Boolean(link) && !duplicate
   const [url, setUrl] = useState('')
   const [code, setCode] = useState('')
   const [title, setTitle] = useState('')
   const [tags, setTags] = useState('')
   const [expiresAt, setExpiresAt] = useState('')
+  const [startsAt, setStartsAt] = useState('')
+  const [status, setStatus] = useState<LinkStatus>('active')
+  const [expiredRedirectUrl, setExpiredRedirectUrl] = useState('')
+  const [maxClicks, setMaxClicks] = useState('')
+  const [privacyEnabled, setPrivacyEnabled] = useState(false)
   const [password, setPassword] = useState('')
   const [removePassword, setRemovePassword] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [campaign, setCampaign] = useState<CampaignParams>({ ...EMPTY_CAMPAIGN })
+  const [presets, setPresets] = useState<CampaignPreset[]>([])
+  const destinationPreview = useMemo(() => {
+    try { return applyCampaignParams(url, campaign) } catch { return url }
+  }, [url, campaign])
 
   useEffect(() => {
     if (open) {
       setUrl(link?.url ?? '')
-      setCode(link?.code ?? '')
+      setCode(duplicate ? '' : link?.code ?? '')
       setTitle(link?.title ?? '')
       setTags((link?.tags ?? []).join(', '))
       setExpiresAt(toLocalInputValue(link?.expiresAt))
+      setStartsAt(toLocalInputValue(link?.startsAt))
+      setStatus(link?.status === 'paused' ? 'paused' : 'active')
+      setExpiredRedirectUrl(link?.expiredRedirectUrl ?? '')
+      setMaxClicks(link?.maxClicks ? String(link.maxClicks) : '')
+      setPrivacyEnabled(link?.privacyEnabled ?? false)
       setPassword('')
       setRemovePassword(false)
+      setCampaign(readCampaignParams(link?.url ?? ''))
+      try {
+        const stored = JSON.parse(localStorage.getItem('linkify-campaign-presets') ?? '[]') as unknown
+        setPresets(Array.isArray(stored) ? stored.filter((item): item is CampaignPreset => {
+          if (!item || typeof item !== 'object') return false
+          const preset = item as Partial<CampaignPreset>
+          return typeof preset.name === 'string' && Boolean(preset.values) &&
+            UTM_FIELDS.every((field) => typeof preset.values?.[field] === 'string')
+        }).slice(-10) : [])
+      } catch {
+        setPresets([])
+      }
     }
-  }, [open, link])
+  }, [open, link, duplicate])
+
+  function savePreset() {
+    const name = prompt('Preset name')?.trim()
+    if (!name) return
+    const next = [...presets.filter((preset) => preset.name !== name), { name, values: campaign }].slice(-10)
+    setPresets(next)
+    localStorage.setItem('linkify-campaign-presets', JSON.stringify(next))
+    toast.success('Campaign preset saved')
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
+    let destination: string
+    try {
+      destination = applyCampaignParams(url, campaign)
+    } catch {
+      setLoading(false)
+      toast.error('Enter a valid destination URL')
+      return
+    }
     const payload: LinkInput = {
-      url,
+      url: destination,
       code: code || undefined,
       title: title || undefined,
       tags: tags.split(',').map((t) => t.trim()).filter(Boolean),
+      status,
+      startsAt: startsAt ? new Date(startsAt).toISOString() : null,
       expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
+      expiredRedirectUrl: expiredRedirectUrl || null,
+      maxClicks: maxClicks ? Number(maxClicks) : null,
+      privacyEnabled,
       password: password || undefined,
     }
     try {
@@ -77,11 +136,11 @@ export function LinkFormDialog({ open, onOpenChange, link, onSaved }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{editing ? 'Edit link' : 'Create a short link'}</DialogTitle>
+          <DialogTitle>{editing ? 'Edit link' : duplicate ? 'Duplicate link' : 'Create a short link'}</DialogTitle>
           <DialogDescription>
-            {editing ? `Editing /${link?.code}` : 'Paste a long URL and optionally customize the short code.'}
+            {editing ? `Editing /${link?.code}` : duplicate ? `Creating a copy of /${link?.code}` : 'Paste a long URL and optionally customize the short code.'}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={onSubmit} className="grid gap-4">
@@ -96,6 +155,38 @@ export function LinkFormDialog({ open, onOpenChange, link, onSaved }: Props) {
               required
             />
           </div>
+          <details className="rounded-md border p-3">
+            <summary className="cursor-pointer text-sm font-medium">Campaign parameters (UTM)</summary>
+            <div className="mt-3 grid gap-3">
+              {presets.length > 0 && (
+                <select
+                  className="h-9 rounded-md border bg-background px-3 text-sm"
+                  defaultValue=""
+                  onChange={(event) => {
+                    const preset = presets.find((item) => item.name === event.target.value)
+                    if (preset) setCampaign(preset.values)
+                  }}
+                >
+                  <option value="">Load a saved preset…</option>
+                  {presets.map((preset) => <option key={preset.name}>{preset.name}</option>)}
+                </select>
+              )}
+              <div className="grid grid-cols-2 gap-3">
+                {UTM_FIELDS.map((field) => (
+                  <div key={field} className="grid gap-1.5">
+                    <Label htmlFor={field}>{UTM_LABELS[field]}</Label>
+                    <Input
+                      id={field}
+                      value={campaign[field]}
+                      onChange={(event) => setCampaign({ ...campaign, [field]: event.target.value })}
+                    />
+                  </div>
+                ))}
+              </div>
+              <div><Button type="button" size="sm" variant="outline" onClick={savePreset}>Save as preset</Button></div>
+              {destinationPreview && <p className="break-all text-xs text-muted-foreground">Preview: {destinationPreview}</p>}
+            </div>
+          </details>
           <div className="grid grid-cols-2 gap-4">
             <div className="grid gap-2">
               <Label htmlFor="code">Custom code</Label>
@@ -123,14 +214,33 @@ export function LinkFormDialog({ open, onOpenChange, link, onSaved }: Props) {
             />
             <p className="text-xs text-muted-foreground">Comma-separated, up to 10.</p>
           </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="grid gap-2">
+              <Label htmlFor="starts">Starts (optional)</Label>
+              <Input id="starts" type="datetime-local" value={startsAt} onChange={(e) => setStartsAt(e.target.value)} />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="expires">Expires (optional)</Label>
+              <Input id="expires" type="datetime-local" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="grid gap-2">
+              <Label htmlFor="status">Status</Label>
+              <select id="status" className="h-9 rounded-md border bg-background px-3 text-sm" value={status} onChange={(e) => setStatus(e.target.value as LinkStatus)}>
+                <option value="active">Active</option>
+                <option value="paused">Paused</option>
+              </select>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="max-clicks">Click limit (optional)</Label>
+              <Input id="max-clicks" type="number" min={1} max={1_000_000_000} value={maxClicks} onChange={(e) => setMaxClicks(e.target.value)} />
+            </div>
+          </div>
           <div className="grid gap-2">
-            <Label htmlFor="expires">Expiry (optional)</Label>
-            <Input
-              id="expires"
-              type="datetime-local"
-              value={expiresAt}
-              onChange={(e) => setExpiresAt(e.target.value)}
-            />
+            <Label htmlFor="expired-redirect">Inactive fallback URL (optional)</Label>
+            <Input id="expired-redirect" type="url" placeholder="https://example.com/campaign-ended" value={expiredRedirectUrl} onChange={(e) => setExpiredRedirectUrl(e.target.value)} />
+            <p className="text-xs text-muted-foreground">Used when paused, not started, expired, or at its click limit.</p>
           </div>
           <div className="grid gap-2">
             <Label htmlFor="password">
@@ -156,6 +266,10 @@ export function LinkFormDialog({ open, onOpenChange, link, onSaved }: Props) {
               </label>
             )}
           </div>
+          <label className="flex items-start gap-2 rounded-md border p-3 text-sm">
+            <input type="checkbox" className="mt-0.5" checked={privacyEnabled} onChange={(e) => setPrivacyEnabled(e.target.checked)} />
+            <span><span className="font-medium">Privacy mode</span><span className="block text-xs text-muted-foreground">Keep unique counts but do not retain raw IP, city, or user-agent values.</span></span>
+          </label>
           <DialogFooter>
             <Button type="submit" disabled={loading}>
               {loading ? 'Saving…' : editing ? 'Save changes' : 'Create link'}

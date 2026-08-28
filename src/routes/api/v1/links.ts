@@ -72,7 +72,12 @@ export const Route = createFileRoute('/api/v1/links')({
             url: body.url,
             title: body.title ?? null,
             tags: body.tags ?? [],
+            status: body.status ?? 'active',
+            startsAt: body.startsAt ? new Date(body.startsAt) : null,
             expiresAt: body.expiresAt ? new Date(body.expiresAt) : null,
+            expiredRedirectUrl: body.expiredRedirectUrl ?? null,
+            maxClicks: body.maxClicks ?? null,
+            privacyEnabled: body.privacyEnabled ?? false,
             passwordHash: body.password ? hashPassword(body.password) : null,
             userId: key.userId,
           })

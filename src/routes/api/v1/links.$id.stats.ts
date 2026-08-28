@@ -31,11 +31,12 @@ export const Route = createFileRoute('/api/v1/links/$id/stats')({
         const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
         const scope = and(eq(clicks.linkId, link.id), gte(clicks.timestamp, since))
 
-        const [series, byCountry, byReferrer, botSplit] = await Promise.all([
+        const [series, byCountry, byReferrer, botSplit, uniqueRows] = await Promise.all([
           db
             .select({
               day: sql<string>`to_char(date_trunc('day', ${clicks.timestamp}), 'YYYY-MM-DD')`,
               count: sql<number>`count(*)::int`,
+              unique: sql<number>`count(distinct ${clicks.visitorHash}) filter (where not ${clicks.isBot})::int`,
             })
             .from(clicks)
             .where(scope)
@@ -60,6 +61,10 @@ export const Route = createFileRoute('/api/v1/links/$id/stats')({
             .from(clicks)
             .where(scope)
             .groupBy(clicks.isBot),
+          db
+            .select({ count: sql<number>`count(distinct ${clicks.visitorHash}) filter (where not ${clicks.isBot})::int` })
+            .from(clicks)
+            .where(scope),
         ])
 
         return json({
@@ -68,6 +73,7 @@ export const Route = createFileRoute('/api/v1/links/$id/stats')({
           totalClicks: link.clickCount,
           human: botSplit.find((b) => !b.isBot)?.count ?? 0,
           bots: botSplit.find((b) => b.isBot)?.count ?? 0,
+          uniqueVisitors: uniqueRows[0]?.count ?? 0,
           series,
           byCountry,
           byReferrer,

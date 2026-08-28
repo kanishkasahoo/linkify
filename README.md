@@ -7,10 +7,11 @@ A single-user / small-team link shortener with analytics, built on TanStack Star
 - **Short links** — random or custom codes, optional titles
 - **Tags** — up to 10 per link, with filter chips and tag search on the dashboard
 - **Teams & ownership** — role-based access (admin/user); non-admin users see and manage only their own links and stats, admins see everything with an owner column
-- **Expiry** — links return 410 after a configurable date/time
+- **Lifecycle controls** — pause links, schedule activation, expire them, cap clicks, and optionally redirect inactive traffic to a fallback URL
 - **Password protection** — visitors must enter a password before being redirected; brute-force attempts are rate-limited (5 failures per link+IP locks for 15 min)
-- **Analytics** — every click records IP, country/city (via Vercel geo headers), user agent, browser/OS/device, referrer, and bot vs human detection
-- **Dashboards** — clicks-over-time chart, country/referrer/browser/OS/device breakdowns, bot ratio, raw click log; text search across code/URL/title/tags/owner plus status filters, bulk delete/expire/CSV-export
+- **Campaigns** — duplicate links, compose UTM parameters, and save campaign presets in the browser
+- **Analytics** — total and unique-human clicks, country/city (via Vercel geo headers), browser/OS/device, referrer, and bot detection; per-link privacy mode omits raw IP, city, and user agent
+- **Dashboards** — clicks-over-time chart, country/referrer/browser/OS/device breakdowns, bot ratio, raw click log; text search, lifecycle filters, CSV import/export, and bulk lifecycle/tag/ownership editing
 - **QR codes** — authenticated, owner-scoped per-link PNG generation (`/api/qr/:code`)
 - **Auth** — email + password, TOTP two-factor, passkeys, database-backed throttling, session management, and security activity. First-run registration requires the deployment's setup secret; administrators must enable TOTP before managing data or users
 - **REST API** — expiring bearer keys with explicit read/write/stats scopes; keys are per-user and owner-scoped (admin keys see all); link creation is capped at 30/hour per user
@@ -41,6 +42,7 @@ A single-user / small-team link shortener with analytics, built on TanStack Star
    - `SETUP_SECRET` — a separate random value of at least 32 characters, required to create the first account
    - `CRON_SECRET` — a separate random value of at least 32 characters, used by the retention job
    - `APP_BASE_URL` — public base used to build short URLs and QR codes
+   - `ANALYTICS_HASH_SECRET` — optional dedicated HMAC secret for pseudonymous unique-visitor counting; falls back to `BETTER_AUTH_SECRET`
 
 3. **Create the tables**
 
@@ -76,7 +78,7 @@ Authenticate with `Authorization: Bearer <key>` (create a scoped, expiring key i
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/api/v1/links` | List links |
-| `POST` | `/api/v1/links` | Create link `{ url, code?, title?, tags?, expiresAt?, password? }` |
+| `POST` | `/api/v1/links` | Create link `{ url, code?, title?, tags?, status?, startsAt?, expiresAt?, expiredRedirectUrl?, maxClicks?, privacyEnabled?, password? }` |
 | `GET` | `/api/v1/links/:id` | Get one link |
 | `PATCH` | `/api/v1/links/:id` | Update fields (pass `password: null` to remove protection) |
 | `DELETE` | `/api/v1/links/:id` | Delete link and its clicks |

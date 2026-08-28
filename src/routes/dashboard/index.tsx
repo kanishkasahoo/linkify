@@ -3,10 +3,10 @@ import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import {
   ArrowDown, ArrowUp, ArrowUpDown, BarChart3, Copy, Download, Lock,
-  Pencil, Plus, QrCode, Search, TimerOff, Trash2, X,
+  CopyPlus, Pencil, Plus, QrCode, Search, SlidersHorizontal, TimerOff, Trash2, Upload, X,
 } from 'lucide-react'
 import {
-  bulkDeleteLinks, bulkExpireLinks, deleteLink, getOverview, listLinks,
+  bulkDeleteLinks, bulkExpireLinks, deleteLink, getLinkAvailability, getOverview, listLinks,
 } from '~/lib/links'
 import { listUserDirectory } from '~/lib/users'
 import type { SafeLink as LinkRow } from '~/lib/links'
@@ -18,6 +18,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '~/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '~/components/ui/dialog'
 import { LinkFormDialog } from '~/components/link-form'
+import { LinkImportDialog } from '~/components/link-import-dialog'
+import { BulkEditLinksDialog } from '~/components/bulk-edit-links-dialog'
 
 export const Route = createFileRoute('/dashboard/')({
   loader: async () => {
@@ -32,17 +34,20 @@ function shortUrl(code: string) {
 }
 
 type SortKey = 'code' | 'url' | 'clickCount' | 'createdAt' | 'expiresAt'
-type StatusFilter = 'all' | 'active' | 'expired' | 'protected' | 'unused'
+type StatusFilter = 'all' | 'active' | 'paused' | 'scheduled' | 'expired' | 'limit-reached' | 'protected' | 'unused'
 
 const STATUS_OPTIONS: { value: StatusFilter; label: string }[] = [
   { value: 'all', label: 'All' },
   { value: 'active', label: 'Active' },
+  { value: 'paused', label: 'Paused' },
+  { value: 'scheduled', label: 'Scheduled' },
   { value: 'expired', label: 'Expired' },
+  { value: 'limit-reached', label: 'At limit' },
   { value: 'protected', label: 'Password-protected' },
   { value: 'unused', label: 'No clicks' },
 ]
 
-const isExpired = (l: LinkRow) => Boolean(l.expiresAt && new Date(l.expiresAt) < new Date())
+const lifecycleState = (link: LinkRow) => getLinkAvailability(link).state
 
 const UNTAGGED = '__untagged__'
 
@@ -60,7 +65,10 @@ function LinksPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<LinkRow | null>(null)
+  const [duplicating, setDuplicating] = useState(false)
   const [qrFor, setQrFor] = useState<string | null>(null)
+  const [importOpen, setImportOpen] = useState(false)
+  const [bulkEditOpen, setBulkEditOpen] = useState(false)
 
   const allTags = useMemo(
     () => [...new Set(links.flatMap((l) => l.tags))].sort(),
@@ -92,10 +100,19 @@ function LinksPage() {
     }
     switch (status) {
       case 'active':
-        rows = rows.filter((l) => !isExpired(l))
+        rows = rows.filter((l) => lifecycleState(l) === 'active')
+        break
+      case 'paused':
+        rows = rows.filter((l) => lifecycleState(l) === 'paused')
+        break
+      case 'scheduled':
+        rows = rows.filter((l) => lifecycleState(l) === 'scheduled')
         break
       case 'expired':
-        rows = rows.filter((l) => isExpired(l))
+        rows = rows.filter((l) => lifecycleState(l) === 'expired')
+        break
+      case 'limit-reached':
+        rows = rows.filter((l) => lifecycleState(l) === 'limit-reached')
         break
       case 'protected':
         rows = rows.filter((l) => l.passwordProtected)
@@ -190,7 +207,7 @@ function LinksPage() {
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
     }
     const csv = [
-      'code,short_url,destination,title,tags,clicks,created_at,expires_at,password_protected',
+      'code,short_url,destination,title,tags,status,starts_at,expires_at,expired_redirect_url,max_clicks,privacy_enabled,clicks,created_at,password_protected',
       ...rows.map((l) =>
         [
           esc(l.code),
@@ -198,9 +215,14 @@ function LinksPage() {
           esc(l.url),
           esc(l.title),
           esc(l.tags.join(' ')),
+          esc(l.status),
+          esc(l.startsAt ? new Date(l.startsAt).toISOString() : null),
+          esc(l.expiresAt ? new Date(l.expiresAt).toISOString() : null),
+          esc(l.expiredRedirectUrl),
+          esc(l.maxClicks),
+          l.privacyEnabled ? 'yes' : 'no',
           l.clickCount,
           esc(l.createdAt ? new Date(l.createdAt).toISOString() : null),
-          esc(l.expiresAt ? new Date(l.expiresAt).toISOString() : null),
           l.passwordProtected ? 'yes' : 'no',
         ].join(','),
       ),
@@ -216,9 +238,10 @@ function LinksPage() {
 
   return (
     <div className="grid gap-6">
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
         <StatCard label="Total links" value={overview.linkCount} />
         <StatCard label="Clicks (30d)" value={overview.clicks30d} />
+        <StatCard label="Unique humans (30d)" value={overview.unique30d} />
         <StatCard label="Humans (30d)" value={overview.clicks30d - overview.bots30d} />
         <StatCard label="Bots (30d)" value={overview.bots30d} />
       </div>
@@ -245,7 +268,10 @@ function LinksPage() {
             </Button>
           ))}
         </div>
-        <Button onClick={() => { setEditing(null); setFormOpen(true) }}>
+        <Button variant="outline" onClick={() => setImportOpen(true)}>
+          <Upload /> Import CSV
+        </Button>
+        <Button onClick={() => { setEditing(null); setDuplicating(false); setFormOpen(true) }}>
           <Plus /> New link
         </Button>
       </div>
@@ -295,6 +321,9 @@ function LinksPage() {
           <Button variant="outline" size="sm" onClick={onBulkExpire}>
             <TimerOff /> Expire now
           </Button>
+          <Button variant="outline" size="sm" onClick={() => setBulkEditOpen(true)}>
+            <SlidersHorizontal /> Edit
+          </Button>
           <Button variant="destructive" size="sm" onClick={onBulkDelete}>
             <Trash2 /> Delete
           </Button>
@@ -320,7 +349,7 @@ function LinksPage() {
               <SortableHead label="Clicks" sortKeyName="clickCount" currentKey={sortKey} asc={sortAsc} onSort={toggleSort} className="text-right" />
               <SortableHead label="Created" sortKeyName="createdAt" currentKey={sortKey} asc={sortAsc} onSort={toggleSort} className="hidden sm:table-cell" />
               {isAdmin && <TableHead className="hidden lg:table-cell">Owner</TableHead>}
-              <TableHead className="w-[160px] text-right">Actions</TableHead>
+              <TableHead className="w-[200px] text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -350,8 +379,8 @@ function LinksPage() {
                       /{link.code}
                     </button>
                     {link.passwordProtected && <Lock className="h-3.5 w-3.5 text-muted-foreground" />}
-                    {isExpired(link) && <Badge variant="destructive">expired</Badge>}
-                    {!isExpired(link) && link.expiresAt && (
+                    {lifecycleState(link) !== 'active' && <Badge variant={lifecycleState(link) === 'expired' ? 'destructive' : 'secondary'}>{lifecycleState(link)}</Badge>}
+                    {lifecycleState(link) === 'active' && link.expiresAt && (
                       <Badge variant="secondary" title={new Date(link.expiresAt).toLocaleString()}>
                         expires {new Date(link.expiresAt).toLocaleDateString()}
                       </Badge>
@@ -397,7 +426,10 @@ function LinksPage() {
                     <Button variant="ghost" size="icon" title="QR code" onClick={() => setQrFor(link.code)}>
                       <QrCode />
                     </Button>
-                    <Button variant="ghost" size="icon" title="Edit" onClick={() => { setEditing(link); setFormOpen(true) }}>
+                    <Button variant="ghost" size="icon" title="Duplicate" onClick={() => { setEditing(link); setDuplicating(true); setFormOpen(true) }}>
+                      <CopyPlus />
+                    </Button>
+                    <Button variant="ghost" size="icon" title="Edit" onClick={() => { setEditing(link); setDuplicating(false); setFormOpen(true) }}>
                       <Pencil />
                     </Button>
                     <Button variant="ghost" size="icon" title="Delete" onClick={() => onDelete(link)}>
@@ -411,7 +443,16 @@ function LinksPage() {
         </Table>
       </Card>
 
-      <LinkFormDialog open={formOpen} onOpenChange={setFormOpen} link={editing} onSaved={refresh} />
+      <LinkFormDialog open={formOpen} onOpenChange={setFormOpen} link={editing} duplicate={duplicating} onSaved={refresh} />
+      <LinkImportDialog open={importOpen} onOpenChange={setImportOpen} onImported={refresh} />
+      <BulkEditLinksDialog
+        open={bulkEditOpen}
+        onOpenChange={setBulkEditOpen}
+        ids={[...selected]}
+        users={users}
+        isAdmin={isAdmin}
+        onSaved={refresh}
+      />
 
       <Dialog open={Boolean(qrFor)} onOpenChange={() => setQrFor(null)}>
         <DialogContent className="max-w-xs">

@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { eq, sql } from 'drizzle-orm'
+import { and, eq, isNull, lt, or, sql } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import { db } from '~/lib/db'
 import { clicks, links } from '~/lib/schema'
@@ -7,6 +7,7 @@ import { extractClickMeta } from '~/lib/analytics'
 import { clientIp, sha256, verifyPassword } from '~/lib/keys'
 import { hitLimit, resetLimit, checkLimit } from '~/lib/ratelimit'
 import { BodyTooLargeError, readBodyLimited } from '~/lib/http'
+import { getLinkAvailability } from '~/lib/link-domain'
 
 function page(title: string, body: string, status = 200) {
   return new Response(
@@ -56,18 +57,49 @@ function redirectResponse(url: string) {
   })
 }
 
-async function recordClick(linkId: string, request: Request) {
-  const meta = extractClickMeta(request)
+async function recordClick(link: typeof links.$inferSelect, request: Request) {
+  const meta = extractClickMeta(request, { privacyEnabled: link.privacyEnabled })
   try {
-    await db.insert(clicks).values({ id: nanoid(), linkId, ...meta })
-    await db
+    // Reserving the counter first makes max-click enforcement atomic even when
+    // several redirects arrive at once.
+    const [reserved] = await db
       .update(links)
       .set({ clickCount: sql`${links.clickCount} + 1` })
-      .where(eq(links.id, linkId))
+      .where(and(
+        eq(links.id, link.id),
+        or(isNull(links.maxClicks), lt(links.clickCount, links.maxClicks)),
+      ))
+      .returning({ id: links.id })
+    if (!reserved) return 'limit-reached' as const
+    try {
+      await db.insert(clicks).values({ id: nanoid(), linkId: link.id, ...meta })
+    } catch (error) {
+      await db.update(links)
+        .set({ clickCount: sql`greatest(${links.clickCount} - 1, 0)` })
+        .where(eq(links.id, link.id))
+        .catch(() => {})
+      throw error
+    }
+    return 'recorded' as const
   } catch (err) {
     // Analytics must never break a redirect.
     console.error('click capture failed', err)
+    return 'failed' as const
   }
+}
+
+function unavailableResponse(link: typeof links.$inferSelect) {
+  const availability = getLinkAvailability(link)
+  if (availability.state === 'active') return null
+  if (availability.fallbackUrl) return redirectResponse(availability.fallbackUrl)
+  const messages = {
+    paused: ['Link paused', 'This short link is temporarily unavailable.'],
+    scheduled: ['Not active yet', `This short link activates ${link.startsAt ? new Date(link.startsAt).toLocaleString() : 'later'}.`],
+    expired: ['Link expired', 'This short link is no longer active.'],
+    'limit-reached': ['Visit limit reached', 'This short link has reached its visit limit.'],
+  } as const
+  const [title, message] = messages[availability.state]
+  return page(title, `<h1>${title}</h1><p>${escapeHtml(message)}</p>`, availability.state === 'expired' ? 410 : 403)
 }
 
 function escapeHtml(value: string) {
@@ -120,9 +152,8 @@ export const Route = createFileRoute('/$code')({
         if (!link) {
           return page('Not found', '<h1>404</h1><p>This link doesn\'t exist or was deleted.</p>', 404)
         }
-        if (link.expiresAt && link.expiresAt < new Date()) {
-          return page('Expired', '<h1>Link expired</h1><p>This short link is no longer active.</p>', 410)
-        }
+        const unavailable = unavailableResponse(link)
+        if (unavailable) return unavailable
         const visitGate = await hitLimit(
           `visit:${link.id}:${sha256(clientIp(request) ?? 'unknown')}`,
           VISIT_LIMIT,
@@ -134,7 +165,10 @@ export const Route = createFileRoute('/$code')({
         if (link.passwordHash) {
           return passwordForm(link.code)
         }
-        await recordClick(link.id, request)
+        const result = await recordClick(link, request)
+        if (result === 'limit-reached') {
+          return unavailableResponse({ ...link, clickCount: link.maxClicks ?? link.clickCount })!
+        }
         return redirectResponse(link.url)
       },
       POST: async ({ request, params }) => {
@@ -142,9 +176,8 @@ export const Route = createFileRoute('/$code')({
         if (!link) {
           return page('Not found', '<h1>404</h1><p>This link doesn\'t exist or was deleted.</p>', 404)
         }
-        if (link.expiresAt && link.expiresAt < new Date()) {
-          return page('Expired', '<h1>Link expired</h1><p>This short link is no longer active.</p>', 410)
-        }
+        const unavailable = unavailableResponse(link)
+        if (unavailable) return unavailable
         if (!request.headers.get('content-type')?.toLowerCase().startsWith('application/x-www-form-urlencoded')) {
           return page('Unsupported request', '<h1>Unsupported request</h1>', 415)
         }
@@ -174,7 +207,10 @@ export const Route = createFileRoute('/$code')({
           return passwordForm(link.code, true)
         }
         await resetLimit(limitKey)
-        await recordClick(link.id, request)
+        const result = await recordClick(link, request)
+        if (result === 'limit-reached') {
+          return unavailableResponse({ ...link, clickCount: link.maxClicks ?? link.clickCount })!
+        }
         return redirectResponse(link.url)
       },
     },

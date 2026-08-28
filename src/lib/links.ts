@@ -3,13 +3,22 @@ import { getRequestHeaders } from '@tanstack/react-start/server'
 import { nanoid } from 'nanoid'
 import { and, desc, eq, gte, inArray, sql } from 'drizzle-orm'
 import { db } from './db'
-import { clicks, links, apiKeys } from './schema'
+import { clicks, links, apiKeys, user as userTable } from './schema'
 import { auth } from './auth'
 import { generateApiKey, hashPassword } from './keys'
 import { API_SCOPES, type ApiScope } from './api-scopes'
 import { hitLimit } from './ratelimit'
-import type { Link } from './schema'
 import { auditEvent } from './audit'
+import {
+  normalizeTags, parseLinkInput, safeLink, validateCode,
+  type LinkInput, type SafeLink,
+} from './link-domain'
+
+export {
+  MAX_LINK_PASSWORD_LEN, getLinkAvailability, normalizeTags, parseLinkInput,
+  safeLink, validateCode, validateUrl,
+} from './link-domain'
+export type { LinkInput, LinkStatus, SafeLink } from './link-domain'
 
 async function requireUser() {
   const session = await auth.api.getSession({ headers: getRequestHeaders() })
@@ -30,29 +39,6 @@ export function ownedByClause(actor: { id: string; role: string }) {
   return eq(links.userId, actor.id)
 }
 
-const CODE_RE = /^[a-zA-Z0-9_-]{1,64}$/
-const MAX_URL_LEN = 2_048
-const MAX_TITLE_LEN = 200
-export const MAX_LINK_PASSWORD_LEN = 128
-
-const MAX_TAGS = 10
-const MAX_TAG_LEN = 32
-
-/** Normalize user-supplied tags: lowercase, trimmed, deduped, capped. */
-export function normalizeTags(tags?: string[] | null): string[] {
-  if (!tags) return []
-  const out: string[] = []
-  for (const raw of tags) {
-    if (typeof raw !== 'string') throw new Error('Tags must be strings')
-    const t = raw.trim().toLowerCase().replace(/\s+/g, '-')
-    if (!t) continue
-    if (t.length > MAX_TAG_LEN) throw new Error(`Tags must be ${MAX_TAG_LEN} characters or fewer`)
-    if (!out.includes(t)) out.push(t)
-  }
-  if (out.length > MAX_TAGS) throw new Error(`At most ${MAX_TAGS} tags per link`)
-  return out
-}
-
 const CREATE_LIMIT = 30
 const CREATE_WINDOW_MS = 60 * 60 * 1000
 
@@ -64,94 +50,9 @@ async function enforceCreateLimit(userId: string) {
   }
 }
 
-export function validateUrl(url: unknown) {
-  if (typeof url !== 'string' || !url.trim() || url.length > MAX_URL_LEN) {
-    throw new Error(`URL is required and must be ${MAX_URL_LEN} characters or fewer`)
-  }
-  try {
-    const u = new URL(url.trim())
-    if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error()
-    return u.toString()
-  } catch {
-    throw new Error('Invalid URL — must start with http:// or https://')
-  }
-}
-
-export function validateCode(code: unknown) {
-  if (typeof code !== 'string') throw new Error('Code is required')
-  if (!CODE_RE.test(code)) {
-    throw new Error('Code may only contain letters, numbers, dashes and underscores (max 64)')
-  }
-  const reserved = ['dashboard', 'login', 'setup', 'api']
-  if (reserved.includes(code.toLowerCase())) throw new Error('That code is reserved')
-  return code
-}
-
-function validateTitle(title: unknown): string | null {
-  if (title === undefined || title === null || title === '') return null
-  if (typeof title !== 'string' || title.length > MAX_TITLE_LEN) {
-    throw new Error(`Title must be ${MAX_TITLE_LEN} characters or fewer`)
-  }
-  return title.trim() || null
-}
-
-function validatePassword(password: unknown): string | null | undefined {
-  if (password === undefined) return undefined
-  if (password === null || password === '') return null
-  if (typeof password !== 'string' || password.length > MAX_LINK_PASSWORD_LEN) {
-    throw new Error(`Password must be ${MAX_LINK_PASSWORD_LEN} characters or fewer`)
-  }
-  return password
-}
-
-function validateExpiry(value: unknown): string | null | undefined {
-  if (value === undefined) return undefined
-  if (value === null || value === '') return null
-  if (typeof value !== 'string') throw new Error('Expiry must be an ISO date string')
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) throw new Error('Expiry must be a valid date')
-  return date.toISOString()
-}
-
 function asObject(input: unknown): Record<string, unknown> {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Invalid input')
   return input as Record<string, unknown>
-}
-
-export interface LinkInput {
-  url: string
-  code?: string
-  title?: string | null
-  tags?: string[]
-  expiresAt?: string | null
-  password?: string | null
-}
-
-export type SafeLink = Omit<Link, 'passwordHash'> & { passwordProtected: boolean }
-
-export function safeLink(row: Link): SafeLink {
-  const { passwordHash, ...rest } = row
-  return { ...rest, passwordProtected: Boolean(passwordHash) }
-}
-
-export function parseLinkInput(input: unknown, partial = false): LinkInput {
-  const value = asObject(input)
-  const out: Partial<LinkInput> = {}
-  if (!partial || value.url !== undefined) out.url = validateUrl(value.url)
-  if (!partial || value.code !== undefined) {
-    if (!partial && (value.code === undefined || value.code === '')) out.code = undefined
-    else out.code = validateCode(value.code)
-  }
-  if (!partial || value.title !== undefined) out.title = validateTitle(value.title)
-  if (!partial || value.tags !== undefined) {
-    if (value.tags !== undefined && !Array.isArray(value.tags)) throw new Error('Tags must be an array')
-    out.tags = normalizeTags(value.tags as string[] | null | undefined)
-  }
-  const expiresAt = validateExpiry(value.expiresAt)
-  if (!partial || expiresAt !== undefined) out.expiresAt = expiresAt
-  const password = validatePassword(value.password)
-  if (!partial || password !== undefined) out.password = password
-  return out as LinkInput
 }
 
 function parseId(input: unknown) {
@@ -197,7 +98,12 @@ export const createLink = createServerFn({ method: 'POST' })
         url,
         title: data.title ?? null,
         tags: normalizeTags(data.tags),
+        status: data.status ?? 'active',
+        startsAt: data.startsAt ? new Date(data.startsAt) : null,
         expiresAt: data.expiresAt ? new Date(data.expiresAt) : null,
+        expiredRedirectUrl: data.expiredRedirectUrl ?? null,
+        maxClicks: data.maxClicks ?? null,
+        privacyEnabled: data.privacyEnabled ?? false,
         passwordHash: data.password ? hashPassword(data.password) : null,
         userId: user.id,
       })
@@ -238,7 +144,12 @@ export const updateLink = createServerFn({ method: 'POST' })
         code,
         title: data.title ?? null,
         tags: normalizeTags(data.tags),
+        status: data.status ?? 'active',
+        startsAt: data.startsAt ? new Date(data.startsAt) : null,
         expiresAt: data.expiresAt ? new Date(data.expiresAt) : null,
+        expiredRedirectUrl: data.expiredRedirectUrl ?? null,
+        maxClicks: data.maxClicks ?? null,
+        privacyEnabled: data.privacyEnabled ?? false,
         ...(data.removePassword
           ? { passwordHash: null }
           : data.password
@@ -249,6 +160,11 @@ export const updateLink = createServerFn({ method: 'POST' })
       .where(owned ? and(eq(links.id, data.id), owned) : eq(links.id, data.id))
       .returning()
     if (!row) throw new Error('Link not found')
+    if (row.privacyEnabled) {
+      await db.update(clicks)
+        .set({ ip: null, city: null, userAgent: null })
+        .where(eq(clicks.linkId, row.id))
+    }
     await auditEvent({
       action: 'link.updated', actorUserId: user.id, targetType: 'link', targetId: row.id,
       headers: getRequestHeaders(),
@@ -308,6 +224,155 @@ export const bulkExpireLinks = createServerFn({ method: 'POST' })
     return { ok: true, count: rows.length }
   })
 
+export interface BulkLinkUpdateInput {
+  ids: string[]
+  status?: 'active' | 'paused'
+  startsAt?: string | null
+  expiresAt?: string | null
+  addTags?: string[]
+  removeTags?: string[]
+  ownerId?: string
+}
+
+export const bulkUpdateLinks = createServerFn({ method: 'POST' })
+  .validator((input: unknown): BulkLinkUpdateInput => {
+    const value = asObject(input)
+    const ids = parseIds(input)
+    if (value.status !== undefined && value.status !== 'active' && value.status !== 'paused') {
+      throw new Error('Invalid status')
+    }
+    const parsed = parseLinkInput({
+      ...(value.startsAt !== undefined ? { startsAt: value.startsAt } : {}),
+      ...(value.expiresAt !== undefined ? { expiresAt: value.expiresAt } : {}),
+      ...(value.status !== undefined ? { status: value.status } : {}),
+    }, true)
+    const addTags = normalizeTags(Array.isArray(value.addTags) ? value.addTags as string[] : [])
+    const removeTags = normalizeTags(Array.isArray(value.removeTags) ? value.removeTags as string[] : [])
+    if (value.ownerId !== undefined && (typeof value.ownerId !== 'string' || !value.ownerId)) {
+      throw new Error('Invalid owner')
+    }
+    if (!parsed.status && parsed.startsAt === undefined && parsed.expiresAt === undefined && addTags.length === 0 && removeTags.length === 0 && !value.ownerId) {
+      throw new Error('Choose at least one bulk change')
+    }
+    return { ids, ...parsed, addTags, removeTags, ownerId: value.ownerId as string | undefined }
+  })
+  .handler(async ({ data }) => {
+    const actor = await requireUser()
+    if (data.ids.length === 0) return { ok: true, count: 0 }
+    if (data.ownerId && actor.role !== 'admin') throw new Error('Only admins can transfer ownership')
+    if (data.ownerId) {
+      const [owner] = await db.select({ id: userTable.id }).from(userTable).where(eq(userTable.id, data.ownerId))
+      if (!owner) throw new Error('Owner not found')
+    }
+    const owned = ownedByClause(actor)
+    const rows = await db
+      .select()
+      .from(links)
+      .where(owned ? and(inArray(links.id, data.ids), owned) : inArray(links.id, data.ids))
+
+    await Promise.all(rows.map((row) => {
+      const removed = new Set(data.removeTags)
+      const tags = normalizeTags([...row.tags.filter((tag) => !removed.has(tag)), ...(data.addTags ?? [])])
+      const startsAt = data.startsAt === undefined ? row.startsAt : data.startsAt ? new Date(data.startsAt) : null
+      const expiresAt = data.expiresAt === undefined ? row.expiresAt : data.expiresAt ? new Date(data.expiresAt) : null
+      if (startsAt && expiresAt && startsAt >= expiresAt) throw new Error(`/${row.code}: expiry must be after the scheduled start`)
+      return db.update(links).set({
+        ...(data.status ? { status: data.status } : {}),
+        ...(data.startsAt !== undefined ? { startsAt } : {}),
+        ...(data.expiresAt !== undefined ? { expiresAt } : {}),
+        ...(data.ownerId ? { userId: data.ownerId } : {}),
+        tags,
+        updatedAt: new Date(),
+      }).where(eq(links.id, row.id))
+    }))
+    await auditEvent({
+      action: 'link.bulk_updated', actorUserId: actor.id, targetType: 'link',
+      headers: getRequestHeaders(), metadata: { ids: rows.map((row) => row.id), ownerId: data.ownerId },
+    })
+    return { ok: true, count: rows.length }
+  })
+
+type ImportConflictMode = 'skip' | 'replace' | 'generate'
+
+export const importLinks = createServerFn({ method: 'POST' })
+  .validator((input: unknown) => {
+    const value = asObject(input)
+    if (!Array.isArray(value.rows) || value.rows.length === 0 || value.rows.length > 200) {
+      throw new Error('Import between 1 and 200 links at a time')
+    }
+    if (value.conflict !== 'skip' && value.conflict !== 'replace' && value.conflict !== 'generate') {
+      throw new Error('Invalid conflict mode')
+    }
+    return { rows: value.rows as unknown[], conflict: value.conflict as ImportConflictMode }
+  })
+  .handler(async ({ data }) => {
+    const actor = await requireUser()
+    const gate = await hitLimit(`import:${actor.id}`, 3, 60 * 60 * 1000)
+    if (!gate.allowed) throw new Error('Import limit reached — try again later')
+
+    let created = 0
+    let updated = 0
+    let skipped = 0
+    const errors: { row: number; message: string }[] = []
+    for (let index = 0; index < data.rows.length; index += 1) {
+      const raw = data.rows[index]
+      try {
+        const input = parseLinkInput(raw)
+        let code = input.code ?? nanoid(7)
+        let [existing] = await db.select().from(links).where(eq(links.code, code))
+        if (existing && data.conflict === 'generate') {
+          do {
+            code = nanoid(7)
+            ;[existing] = await db.select().from(links).where(eq(links.code, code))
+          } while (existing)
+        }
+        if (existing && data.conflict === 'skip') {
+          skipped += 1
+          continue
+        }
+        const values = {
+          url: input.url,
+          code,
+          title: input.title ?? null,
+          tags: normalizeTags(input.tags),
+          status: input.status ?? 'active',
+          startsAt: input.startsAt ? new Date(input.startsAt) : null,
+          expiresAt: input.expiresAt ? new Date(input.expiresAt) : null,
+          expiredRedirectUrl: input.expiredRedirectUrl ?? null,
+          maxClicks: input.maxClicks ?? null,
+          privacyEnabled: input.privacyEnabled ?? false,
+          ...(input.password ? { passwordHash: hashPassword(input.password) } : {}),
+          updatedAt: new Date(),
+        }
+        if (existing) {
+          const owned = ownedByClause(actor)
+          if (owned && existing.userId !== actor.id) {
+            skipped += 1
+            errors.push({ row: index + 2, message: `/${code} belongs to another user` })
+            continue
+          }
+          await db.update(links).set(values).where(eq(links.id, existing.id))
+          if (input.privacyEnabled) {
+            await db.update(clicks)
+              .set({ ip: null, city: null, userAgent: null })
+              .where(eq(clicks.linkId, existing.id))
+          }
+          updated += 1
+        } else {
+          await db.insert(links).values({ id: nanoid(), userId: actor.id, ...values })
+          created += 1
+        }
+      } catch (error) {
+        errors.push({ row: index + 2, message: error instanceof Error ? error.message : 'Invalid row' })
+      }
+    }
+    await auditEvent({
+      action: 'link.imported', actorUserId: actor.id, targetType: 'link', headers: getRequestHeaders(),
+      metadata: { created, updated, skipped, errors: errors.length },
+    })
+    return { created, updated, skipped, errors }
+  })
+
 // ---------- analytics ----------
 
 export const getLinkStats = createServerFn({ method: 'GET' })
@@ -330,12 +395,13 @@ export const getLinkStats = createServerFn({ method: 'GET' })
     const days = Math.min(Math.max(data.days ?? 30, 1), 365)
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
 
-    const [series, byCountry, byReferrer, byBrowser, byOs, byDevice, botSplit, recent] =
+    const [series, byCountry, byReferrer, byBrowser, byOs, byDevice, botSplit, uniqueRows, recent] =
       await Promise.all([
         db
           .select({
             day: sql<string>`to_char(date_trunc('day', ${clicks.timestamp}), 'YYYY-MM-DD')`,
             count: sql<number>`count(*)::int`,
+            unique: sql<number>`count(distinct ${clicks.visitorHash}) filter (where not ${clicks.isBot})::int`,
           })
           .from(clicks)
           .where(and(eq(clicks.linkId, link.id), gte(clicks.timestamp, since)))
@@ -382,6 +448,10 @@ export const getLinkStats = createServerFn({ method: 'GET' })
           .where(and(eq(clicks.linkId, link.id), gte(clicks.timestamp, since)))
           .groupBy(clicks.isBot),
         db
+          .select({ count: sql<number>`count(distinct ${clicks.visitorHash}) filter (where not ${clicks.isBot})::int` })
+          .from(clicks)
+          .where(and(eq(clicks.linkId, link.id), gte(clicks.timestamp, since))),
+        db
           .select()
           .from(clicks)
           .where(eq(clicks.linkId, link.id))
@@ -392,7 +462,10 @@ export const getLinkStats = createServerFn({ method: 'GET' })
     const human = botSplit.find((b) => !b.isBot)?.count ?? 0
     const bots = botSplit.find((b) => b.isBot)?.count ?? 0
 
-    return { link: safeLink(link), series, byCountry, byReferrer, byBrowser, byOs, byDevice, human, bots, recent }
+    return {
+      link: safeLink(link), series, byCountry, byReferrer, byBrowser, byOs, byDevice,
+      human, bots, uniqueVisitors: uniqueRows[0]?.count ?? 0, recent,
+    }
   })
 
 export const getOverview = createServerFn({ method: 'GET' }).handler(async () => {
@@ -408,6 +481,7 @@ export const getOverview = createServerFn({ method: 'GET' }).handler(async () =>
     .select({
       total: sql<number>`count(*)::int`,
       bots: sql<number>`count(*) filter (where ${clicks.isBot})::int`,
+      unique: sql<number>`count(distinct ${clicks.visitorHash}) filter (where not ${clicks.isBot})::int`,
     })
     .from(clicks)
     .$dynamic()
@@ -420,7 +494,13 @@ export const getOverview = createServerFn({ method: 'GET' }).handler(async () =>
     .where(owned)
     .orderBy(desc(links.clickCount))
     .limit(5)
-  return { linkCount: linkCount.count, clicks30d: clickTotals.total, bots30d: clickTotals.bots, topLinks }
+  return {
+    linkCount: linkCount.count,
+    clicks30d: clickTotals.total,
+    bots30d: clickTotals.bots,
+    unique30d: clickTotals.unique,
+    topLinks,
+  }
 })
 
 // ---------- api keys ----------

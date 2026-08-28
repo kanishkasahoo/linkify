@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { and, eq, sql } from 'drizzle-orm'
 import { db } from '~/lib/db'
-import { links } from '~/lib/schema'
+import { clicks, links } from '~/lib/schema'
 import { resolveApiKey, hashPassword, hasApiScope } from '~/lib/keys'
 import { parseLinkInput, ownedByClause, safeLink } from '~/lib/links'
 import { auditEvent } from '~/lib/audit'
@@ -56,6 +56,17 @@ export const Route = createFileRoute('/api/v1/links/$id')({
             .where(and(eq(links.code, body.code), sql`${links.id} != ${params.id}`))
           if (conflict) return json({ error: `code "${body.code}" is already taken` }, 409)
         }
+        const [current] = await db.select().from(links).where(accessible(params.id, key))
+        if (!current) return json({ error: 'Not found' }, 404)
+        const startsAt = Object.hasOwn(raw, 'startsAt')
+          ? body.startsAt ? new Date(body.startsAt) : null
+          : current.startsAt
+        const expiresAt = Object.hasOwn(raw, 'expiresAt')
+          ? body.expiresAt ? new Date(body.expiresAt) : null
+          : current.expiresAt
+        if (startsAt && expiresAt && startsAt >= expiresAt) {
+          return json({ error: 'Expiry must be after the scheduled start' }, 400)
+        }
         const [row] = await db
           .update(links)
           .set({
@@ -63,9 +74,16 @@ export const Route = createFileRoute('/api/v1/links/$id')({
             ...(Object.hasOwn(raw, 'code') ? { code: body.code } : {}),
             ...(Object.hasOwn(raw, 'title') ? { title: body.title ?? null } : {}),
             ...(Object.hasOwn(raw, 'tags') ? { tags: body.tags ?? [] } : {}),
+            ...(Object.hasOwn(raw, 'status') ? { status: body.status } : {}),
+            ...(Object.hasOwn(raw, 'startsAt') ? { startsAt } : {}),
             ...(Object.hasOwn(raw, 'expiresAt')
-              ? { expiresAt: body.expiresAt ? new Date(body.expiresAt) : null }
+              ? { expiresAt }
               : {}),
+            ...(Object.hasOwn(raw, 'expiredRedirectUrl')
+              ? { expiredRedirectUrl: body.expiredRedirectUrl ?? null }
+              : {}),
+            ...(Object.hasOwn(raw, 'maxClicks') ? { maxClicks: body.maxClicks ?? null } : {}),
+            ...(Object.hasOwn(raw, 'privacyEnabled') ? { privacyEnabled: body.privacyEnabled ?? false } : {}),
             ...(Object.hasOwn(raw, 'password')
               ? { passwordHash: body.password ? hashPassword(body.password) : null }
               : {}),
@@ -74,6 +92,11 @@ export const Route = createFileRoute('/api/v1/links/$id')({
           .where(accessible(params.id, key))
           .returning()
         if (!row) return json({ error: 'Not found' }, 404)
+        if (row.privacyEnabled && Object.hasOwn(raw, 'privacyEnabled')) {
+          await db.update(clicks)
+            .set({ ip: null, city: null, userAgent: null })
+            .where(eq(clicks.linkId, row.id))
+        }
         await auditEvent({
           action: 'api.link.updated', actorUserId: key.userId, targetType: 'link', targetId: row.id,
           headers: request.headers, metadata: { keyId: key.id },

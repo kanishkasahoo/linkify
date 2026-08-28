@@ -24,7 +24,10 @@ export const Route = createFileRoute('/dashboard/links/$code')({
 
 const CHART_COLORS = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)']
 
-const seriesConfig = { count: { label: 'Clicks', color: 'var(--chart-2)' } } satisfies ChartConfig
+const seriesConfig = {
+  count: { label: 'Clicks', color: 'var(--chart-2)' },
+  unique: { label: 'Unique humans', color: 'var(--chart-1)' },
+} satisfies ChartConfig
 
 function AnalyticsPage() {
   const initial = Route.useLoaderData()
@@ -33,7 +36,7 @@ function AnalyticsPage() {
   const [data, setData] = useState(initial)
   const [loading, setLoading] = useState(false)
 
-  const { link, series, byCountry, byReferrer, byBrowser, byOs, byDevice, human, bots, recent } = data
+  const { link, series, byCountry, byReferrer, byBrowser, byOs, byDevice, human, bots, uniqueVisitors, recent } = data
   const total = human + bots
 
   async function changeRange(d: number) {
@@ -56,6 +59,7 @@ function AnalyticsPage() {
           <div className="flex items-center gap-2">
             <h1 className="font-mono text-xl font-semibold">/{link.code}</h1>
             {link.passwordProtected && <Lock className="h-4 w-4 text-muted-foreground" />}
+            {link.privacyEnabled && <Badge variant="secondary">privacy</Badge>}
             <Button
               variant="ghost" size="icon" title="Copy short URL"
               onClick={async () => {
@@ -79,10 +83,11 @@ function AnalyticsPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
         <Stat label="Total clicks" value={link.clickCount} />
         <Stat label={`Clicks (${days}d)`} value={total} />
         <Stat label="Humans" value={human} />
+        <Stat label="Unique humans" value={uniqueVisitors} />
         <Stat label="Bots" value={bots} />
       </div>
 
@@ -102,6 +107,7 @@ function AnalyticsPage() {
                 <YAxis tickLine={false} axisLine={false} allowDecimals={false} />
                 <ChartTooltip content={<ChartTooltipContent />} />
                 <Area type="monotone" dataKey="count" stroke="var(--color-count)" fill="var(--color-count)" fillOpacity={0.15} strokeWidth={2} />
+                <Area type="monotone" dataKey="unique" stroke="var(--color-unique)" fill="var(--color-unique)" fillOpacity={0.08} strokeWidth={2} />
               </AreaChart>
             </ChartContainer>
           )}
@@ -140,7 +146,9 @@ function AnalyticsPage() {
       <Card>
         <CardHeader>
           <CardTitle>Recent clicks</CardTitle>
-          <CardDescription>Last {recent.length} recorded visits with raw metadata.</CardDescription>
+          <CardDescription>
+            Last {recent.length} recorded visits. Privacy-enabled links omit raw IP, city, and user-agent values.
+          </CardDescription>
         </CardHeader>
         <CardContent className="p-0 pb-2">
           <Table>
