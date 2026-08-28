@@ -2,23 +2,22 @@ import { createFileRoute } from '@tanstack/react-router'
 import { and, eq, sql } from 'drizzle-orm'
 import { db } from '~/lib/db'
 import { links } from '~/lib/schema'
-import { resolveApiKey, hashPassword } from '~/lib/keys'
-import { normalizeTags, ownedByClause } from '~/lib/links'
+import { resolveApiKey, hashPassword, hasApiScope } from '~/lib/keys'
+import { parseLinkInput, ownedByClause, safeLink } from '~/lib/links'
+import { auditEvent } from '~/lib/audit'
+import { BodyTooLargeError, readJsonLimited } from '~/lib/http'
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
   })
 }
 
-const strip = (row: typeof links.$inferSelect) => {
-  const { passwordHash, ...rest } = row
-  return { ...rest, passwordProtected: Boolean(passwordHash) }
-}
+const MAX_JSON_BYTES = 64 * 1024
 
 /** WHERE clause matching this id only if the key's owner may access it. */
-function accessible(id: string, key: { userId: string | null; role: string }) {
+function accessible(id: string, key: { userId: string; role: string }) {
   const owned = ownedByClause({ id: key.userId, role: key.role })
   return owned ? and(eq(links.id, id), owned) : eq(links.id, id)
 }
@@ -29,34 +28,26 @@ export const Route = createFileRoute('/api/v1/links/$id')({
       GET: async ({ request, params }) => {
         const key = await resolveApiKey(request)
         if (!key) return json({ error: 'Unauthorized' }, 401)
+        if (!hasApiScope(key, 'links:read')) return json({ error: 'Forbidden' }, 403)
         const [row] = await db.select().from(links).where(accessible(params.id, key))
         if (!row) return json({ error: 'Not found' }, 404)
-        return json(strip(row))
+        return json(safeLink(row))
       },
       PATCH: async ({ request, params }) => {
         const key = await resolveApiKey(request)
         if (!key) return json({ error: 'Unauthorized' }, 401)
-        let body: {
-          url?: string
-          code?: string
-          title?: string | null
-          tags?: string[] | null
-          expiresAt?: string | null
-          password?: string | null
+        if (!hasApiScope(key, 'links:write')) return json({ error: 'Forbidden' }, 403)
+        if (!request.headers.get('content-type')?.toLowerCase().startsWith('application/json')) {
+          return json({ error: 'Content-Type must be application/json' }, 415)
         }
+        let raw: Record<string, unknown>
+        let body: ReturnType<typeof parseLinkInput>
         try {
-          body = await request.json()
-        } catch {
-          return json({ error: 'Invalid JSON body' }, 400)
-        }
-        if (body.tags !== undefined && body.tags !== null && !Array.isArray(body.tags)) {
-          return json({ error: 'tags must be an array of strings' }, 400)
-        }
-        let tags: string[] | undefined
-        try {
-          tags = body.tags !== undefined ? normalizeTags(body.tags) : undefined
+          raw = await readJsonLimited(request, MAX_JSON_BYTES) as Record<string, unknown>
+          body = parseLinkInput(raw, true)
         } catch (err) {
-          return json({ error: err instanceof Error ? err.message : 'invalid tags' }, 400)
+          if (err instanceof BodyTooLargeError) return json({ error: 'Request body too large' }, 413)
+          return json({ error: err instanceof Error ? err.message : 'Invalid JSON body' }, 400)
         }
         if (body.code) {
           const [conflict] = await db
@@ -68,14 +59,14 @@ export const Route = createFileRoute('/api/v1/links/$id')({
         const [row] = await db
           .update(links)
           .set({
-            ...(body.url !== undefined ? { url: body.url } : {}),
-            ...(body.code !== undefined ? { code: body.code } : {}),
-            ...(body.title !== undefined ? { title: body.title } : {}),
-            ...(tags !== undefined ? { tags } : {}),
-            ...(body.expiresAt !== undefined
+            ...(Object.hasOwn(raw, 'url') ? { url: body.url } : {}),
+            ...(Object.hasOwn(raw, 'code') ? { code: body.code } : {}),
+            ...(Object.hasOwn(raw, 'title') ? { title: body.title ?? null } : {}),
+            ...(Object.hasOwn(raw, 'tags') ? { tags: body.tags ?? [] } : {}),
+            ...(Object.hasOwn(raw, 'expiresAt')
               ? { expiresAt: body.expiresAt ? new Date(body.expiresAt) : null }
               : {}),
-            ...(body.password !== undefined
+            ...(Object.hasOwn(raw, 'password')
               ? { passwordHash: body.password ? hashPassword(body.password) : null }
               : {}),
             updatedAt: new Date(),
@@ -83,16 +74,25 @@ export const Route = createFileRoute('/api/v1/links/$id')({
           .where(accessible(params.id, key))
           .returning()
         if (!row) return json({ error: 'Not found' }, 404)
-        return json(strip(row))
+        await auditEvent({
+          action: 'api.link.updated', actorUserId: key.userId, targetType: 'link', targetId: row.id,
+          headers: request.headers, metadata: { keyId: key.id },
+        })
+        return json(safeLink(row))
       },
       DELETE: async ({ request, params }) => {
         const key = await resolveApiKey(request)
         if (!key) return json({ error: 'Unauthorized' }, 401)
+        if (!hasApiScope(key, 'links:write')) return json({ error: 'Forbidden' }, 403)
         const [row] = await db
           .delete(links)
           .where(accessible(params.id, key))
           .returning({ id: links.id })
         if (!row) return json({ error: 'Not found' }, 404)
+        await auditEvent({
+          action: 'api.link.deleted', actorUserId: key.userId, targetType: 'link', targetId: row.id,
+          headers: request.headers, metadata: { keyId: key.id },
+        })
         return json({ ok: true })
       },
     },

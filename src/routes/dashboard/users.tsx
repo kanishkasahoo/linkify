@@ -167,7 +167,7 @@ function UsersPage() {
                 <div className="grid gap-2">
                   <Label htmlFor="member-password">Temporary password</Label>
                   <Input
-                    id="member-password" type="password" minLength={8}
+                    id="member-password" type="password" minLength={12} maxLength={128}
                     value={password} onChange={(e) => setPassword(e.target.value)} required
                   />
                 </div>

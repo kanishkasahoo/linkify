@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { createLink, updateLink, type LinkInput } from '~/lib/links'
-import type { Link as LinkRow } from '~/lib/schema'
+import type { SafeLink as LinkRow } from '~/lib/links'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
@@ -134,17 +134,18 @@ export function LinkFormDialog({ open, onOpenChange, link, onSaved }: Props) {
           </div>
           <div className="grid gap-2">
             <Label htmlFor="password">
-              Password protection {editing && link?.passwordHash ? '(set — type a new one to change)' : '(optional)'}
+              Password protection {editing && link?.passwordProtected ? '(set — type a new one to change)' : '(optional)'}
             </Label>
             <Input
               id="password"
               type="password"
-              placeholder={editing && link?.passwordHash ? '••••••••' : 'Leave blank for none'}
+              placeholder={editing && link?.passwordProtected ? '••••••••' : 'Leave blank for none'}
+              maxLength={128}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               disabled={removePassword}
             />
-            {editing && link?.passwordHash && (
+            {editing && link?.passwordProtected && (
               <label className="flex items-center gap-2 text-sm text-muted-foreground">
                 <input
                   type="checkbox"

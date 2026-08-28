@@ -3,21 +3,22 @@ import { nanoid } from 'nanoid'
 import { desc, eq } from 'drizzle-orm'
 import { db } from '~/lib/db'
 import { links } from '~/lib/schema'
-import { resolveApiKey, hashPassword } from '~/lib/keys'
-import { normalizeTags, ownedByClause } from '~/lib/links'
+import { resolveApiKey, hashPassword, hasApiScope } from '~/lib/keys'
+import { parseLinkInput, ownedByClause, safeLink } from '~/lib/links'
 import { hitLimit } from '~/lib/ratelimit'
+import { auditEvent } from '~/lib/audit'
+import { BodyTooLargeError, readJsonLimited } from '~/lib/http'
 
 function json(data: unknown, status = 200, headers: Record<string, string> = {}) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { 'content-type': 'application/json', ...headers },
+    headers: { 'content-type': 'application/json', 'cache-control': 'no-store', ...headers },
   })
 }
 
-const CODE_RE = /^[a-zA-Z0-9_-]{1,64}$/
-
 const CREATE_LIMIT = 30
 const CREATE_WINDOW_MS = 60 * 60 * 1000
+const MAX_JSON_BYTES = 64 * 1024
 
 export const Route = createFileRoute('/api/v1/links')({
   server: {
@@ -25,6 +26,7 @@ export const Route = createFileRoute('/api/v1/links')({
       GET: async ({ request }) => {
         const key = await resolveApiKey(request)
         if (!key) return json({ error: 'Unauthorized' }, 401)
+        if (!hasApiScope(key, 'links:read')) return json({ error: 'Forbidden' }, 403)
         const rows = await db
           .select()
           .from(links)
@@ -40,47 +42,26 @@ export const Route = createFileRoute('/api/v1/links')({
       POST: async ({ request }) => {
         const key = await resolveApiKey(request)
         if (!key) return json({ error: 'Unauthorized' }, 401)
-        let body: {
-          url?: string
-          code?: string
-          title?: string
-          tags?: string[]
-          expiresAt?: string
-          password?: string
+        if (!hasApiScope(key, 'links:write')) return json({ error: 'Forbidden' }, 403)
+        if (!request.headers.get('content-type')?.toLowerCase().startsWith('application/json')) {
+          return json({ error: 'Content-Type must be application/json' }, 415)
         }
+        let body: ReturnType<typeof parseLinkInput>
         try {
-          body = await request.json()
-        } catch {
-          return json({ error: 'Invalid JSON body' }, 400)
-        }
-        if (!body.url) return json({ error: 'url is required' }, 400)
-        try {
-          const u = new URL(body.url)
-          if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error()
-        } catch {
-          return json({ error: 'url must be a valid http(s) URL' }, 400)
-        }
-        if (body.tags !== undefined && !Array.isArray(body.tags)) {
-          return json({ error: 'tags must be an array of strings' }, 400)
-        }
-        let tags: string[]
-        try {
-          tags = normalizeTags(body.tags)
+          body = parseLinkInput(await readJsonLimited(request, MAX_JSON_BYTES))
         } catch (err) {
-          return json({ error: err instanceof Error ? err.message : 'invalid tags' }, 400)
+          if (err instanceof BodyTooLargeError) return json({ error: 'Request body too large' }, 413)
+          return json({ error: err instanceof Error ? err.message : 'Invalid JSON body' }, 400)
         }
         const code = body.code ?? nanoid(7)
-        if (!CODE_RE.test(code)) return json({ error: 'invalid code' }, 400)
         const [existing] = await db.select({ id: links.id }).from(links).where(eq(links.code, code))
         if (existing) return json({ error: `code "${code}" is already taken` }, 409)
 
-        if (key.userId) {
-          const { allowed, retryAfterSec } = await hitLimit(`create:${key.userId}`, CREATE_LIMIT, CREATE_WINDOW_MS)
-          if (!allowed) {
-            return json({ error: 'Rate limit reached — link creation is capped at 30/hour' }, 429, {
-              'retry-after': String(retryAfterSec),
-            })
-          }
+        const { allowed, retryAfterSec } = await hitLimit(`create:${key.userId}`, CREATE_LIMIT, CREATE_WINDOW_MS)
+        if (!allowed) {
+          return json({ error: 'Rate limit reached — link creation is capped at 30/hour' }, 429, {
+            'retry-after': String(retryAfterSec),
+          })
         }
 
         const [row] = await db
@@ -90,14 +71,17 @@ export const Route = createFileRoute('/api/v1/links')({
             code,
             url: body.url,
             title: body.title ?? null,
-            tags,
+            tags: body.tags ?? [],
             expiresAt: body.expiresAt ? new Date(body.expiresAt) : null,
             passwordHash: body.password ? hashPassword(body.password) : null,
             userId: key.userId,
           })
           .returning()
-        const { passwordHash, ...rest } = row
-        return json({ ...rest, passwordProtected: Boolean(passwordHash) }, 201)
+        await auditEvent({
+          action: 'api.link.created', actorUserId: key.userId, targetType: 'link', targetId: row.id,
+          headers: request.headers, metadata: { keyId: key.id },
+        })
+        return json(safeLink(row), 201)
       },
     },
   },

@@ -6,6 +6,7 @@ import { clicks, links } from '~/lib/schema'
 import { extractClickMeta } from '~/lib/analytics'
 import { clientIp, sha256, verifyPassword } from '~/lib/keys'
 import { hitLimit, resetLimit, checkLimit } from '~/lib/ratelimit'
+import { BodyTooLargeError, readBodyLimited } from '~/lib/http'
 
 function page(title: string, body: string, status = 200) {
   return new Response(
@@ -32,7 +33,15 @@ function page(title: string, body: string, status = 200) {
 </head>
 <body><div class="card">${body}</div></body>
 </html>`,
-    { status, headers: { 'content-type': 'text/html; charset=utf-8' } },
+    {
+      status,
+      headers: {
+        'content-type': 'text/html; charset=utf-8',
+        'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
+        'x-content-type-options': 'nosniff',
+        'referrer-policy': 'no-referrer',
+      },
+    },
   )
 }
 
@@ -61,6 +70,16 @@ async function recordClick(linkId: string, request: Request) {
   }
 }
 
+function escapeHtml(value: string) {
+  return value.replace(/[&<>"']/g, (char) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  })[char]!)
+}
+
 const passwordForm = (code: string, error = false, lockedRetrySec = 0) =>
   page(
     'Protected link',
@@ -68,8 +87,8 @@ const passwordForm = (code: string, error = false, lockedRetrySec = 0) =>
      <p>This link requires a password to continue.</p>
      ${lockedRetrySec > 0 ? `<p class="err">Too many attempts — try again in ${Math.ceil(lockedRetrySec / 60)} min.</p>` : ''}
      ${!lockedRetrySec && error ? '<p class="err">Incorrect password, try again.</p>' : ''}
-     <form method="POST" action="/${code}">
-       <input type="password" name="password" placeholder="Password" autofocus required ${lockedRetrySec > 0 ? 'disabled' : ''} />
+     <form method="POST" action="/${escapeHtml(encodeURIComponent(code))}">
+       <input type="password" name="password" placeholder="Password" maxlength="128" autocomplete="current-password" autofocus required ${lockedRetrySec > 0 ? 'disabled' : ''} />
        <button type="submit" ${lockedRetrySec > 0 ? 'disabled' : ''}>Continue</button>
      </form>`,
     lockedRetrySec > 0 ? 429 : error ? 401 : 200,
@@ -79,6 +98,9 @@ const passwordForm = (code: string, error = false, lockedRetrySec = 0) =>
 // link+IP within 15 minutes locks that IP out for the rest of the window.
 const PW_LIMIT = 5
 const PW_WINDOW_MS = 15 * 60 * 1000
+const VISIT_LIMIT = 120
+const VISIT_WINDOW_MS = 60 * 1000
+const MAX_FORM_BYTES = 4 * 1024
 
 function pwLimitKey(linkId: string, request: Request) {
   const ip = clientIp(request) ?? 'unknown'
@@ -101,6 +123,14 @@ export const Route = createFileRoute('/$code')({
         if (link.expiresAt && link.expiresAt < new Date()) {
           return page('Expired', '<h1>Link expired</h1><p>This short link is no longer active.</p>', 410)
         }
+        const visitGate = await hitLimit(
+          `visit:${link.id}:${sha256(clientIp(request) ?? 'unknown')}`,
+          VISIT_LIMIT,
+          VISIT_WINDOW_MS,
+        )
+        if (!visitGate.allowed) {
+          return page('Too many requests', '<h1>Too many requests</h1><p>Please try again shortly.</p>', 429)
+        }
         if (link.passwordHash) {
           return passwordForm(link.code)
         }
@@ -115,6 +145,9 @@ export const Route = createFileRoute('/$code')({
         if (link.expiresAt && link.expiresAt < new Date()) {
           return page('Expired', '<h1>Link expired</h1><p>This short link is no longer active.</p>', 410)
         }
+        if (!request.headers.get('content-type')?.toLowerCase().startsWith('application/x-www-form-urlencoded')) {
+          return page('Unsupported request', '<h1>Unsupported request</h1>', 415)
+        }
         const limitKey = pwLimitKey(link.id, request)
         // A locked-out IP is rejected even with the right password until the
         // window expires.
@@ -122,8 +155,20 @@ export const Route = createFileRoute('/$code')({
         if (!gate.allowed) {
           return passwordForm(link.code, false, gate.retryAfterSec)
         }
-        const form = await request.formData()
-        const password = String(form.get('password') ?? '')
+        let password: string
+        try {
+          const body = await readBodyLimited(request, MAX_FORM_BYTES)
+          password = new URLSearchParams(body).get('password') ?? ''
+        } catch (error) {
+          if (error instanceof BodyTooLargeError) {
+            return page('Request too large', '<h1>Request too large</h1>', 413)
+          }
+          throw error
+        }
+        if (password.length > 128) {
+          await hitLimit(limitKey, PW_LIMIT, PW_WINDOW_MS)
+          return passwordForm(link.code, true)
+        }
         if (!link.passwordHash || !verifyPassword(password, link.passwordHash)) {
           await hitLimit(limitKey, PW_LIMIT, PW_WINDOW_MS)
           return passwordForm(link.code, true)

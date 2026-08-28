@@ -11,9 +11,9 @@ A single-user / small-team link shortener with analytics, built on TanStack Star
 - **Password protection** — visitors must enter a password before being redirected; brute-force attempts are rate-limited (5 failures per link+IP locks for 15 min)
 - **Analytics** — every click records IP, country/city (via Vercel geo headers), user agent, browser/OS/device, referrer, and bot vs human detection
 - **Dashboards** — clicks-over-time chart, country/referrer/browser/OS/device breakdowns, bot ratio, raw click log; text search across code/URL/title/tags/owner plus status filters, bulk delete/expire/CSV-export
-- **QR codes** — per-link PNG generation (`/api/qr/:code`)
-- **Auth** — email + password, TOTP two-factor, and passkeys. The first registered account becomes the admin; afterwards only admins can create accounts (Settings → Users)
-- **REST API** — manage links and read stats with bearer API keys; keys are per-user and scoped to that user's links (admin keys see all); link creation is capped at 30/hour per user
+- **QR codes** — authenticated, owner-scoped per-link PNG generation (`/api/qr/:code`)
+- **Auth** — email + password, TOTP two-factor, passkeys, database-backed throttling, session management, and security activity. First-run registration requires the deployment's setup secret; administrators must enable TOTP before managing data or users
+- **REST API** — expiring bearer keys with explicit read/write/stats scopes; keys are per-user and owner-scoped (admin keys see all); link creation is capped at 30/hour per user
 
 ## Stack
 
@@ -38,6 +38,8 @@ A single-user / small-team link shortener with analytics, built on TanStack Star
    - `DATABASE_URL` — Neon Postgres connection string
    - `BETTER_AUTH_SECRET` — long random string
    - `BETTER_AUTH_URL` — app URL (`http://localhost:3000` locally)
+   - `SETUP_SECRET` — a separate random value of at least 32 characters, required to create the first account
+   - `CRON_SECRET` — a separate random value of at least 32 characters, used by the retention job
    - `APP_BASE_URL` — public base used to build short URLs and QR codes
 
 3. **Create the tables**
@@ -54,19 +56,22 @@ A single-user / small-team link shortener with analytics, built on TanStack Star
    npm run dev
    ```
 
-5. Open `http://localhost:3000` — you'll be sent to `/setup` to create the owner account. Afterwards, registration is permanently closed (enforced server-side). Set up TOTP 2FA and a passkey in **Settings**.
+5. Open `http://localhost:3000` — you'll be sent to `/setup`; enter `SETUP_SECRET` to create the owner account. Afterwards, registration is permanently closed (enforced atomically in the database). The owner must set up TOTP in **Settings** before managing links or users. Accounts created by an administrator must replace their temporary password at first sign-in.
 
 ## Deploying to Vercel
 
 1. Push the repo and import it in Vercel (framework auto-detected).
-2. Set the env vars above in the project settings (`APP_BASE_URL` = your production domain).
-3. Deploy. Click analytics geo fields (`country`, `city`, `ip`) populate automatically from Vercel's request headers.
+2. Set every variable in `.env.example` in the project settings (`APP_BASE_URL` and `BETTER_AUTH_URL` = your production origin). Keep `SETUP_SECRET`, `BETTER_AUTH_SECRET`, and `CRON_SECRET` distinct.
+3. Apply migrations to the intended production database with `npm run db:migrate` from a controlled release job or operator shell.
+4. Deploy. Click analytics geo fields (`country`, `city`, `ip`) populate automatically from Vercel's request headers.
 
-**Schema migrations run automatically**: the build command is `node scripts/migrate.mjs && vite build`, so every deploy first brings `DATABASE_URL`'s database up to date with the committed migrations in `drizzle/`. The script handles three states: fresh databases get all migrations, previously migrated databases get only pending ones, and pre-existing databases provisioned via `db:push` (possibly schema-drifted) are reconciled with `drizzle-kit push` and baselined before the migrator takes over. `DATABASE_URL` must be available at build time (Vercel exposes project env vars to builds by default). Note that preview deployments also run migrations against whatever `DATABASE_URL` they see — use the Neon Vercel integration's per-preview branches, or only merge schema changes when you're ready for them to hit the production database.
+Normal builds never mutate the database, so preview deployments cannot accidentally migrate production. `npm run db:migrate` applies committed migrations only; it never falls back to `drizzle-kit push`. For a tightly controlled deployment environment, `npm run build:with-migrations` is available explicitly. A pre-existing database created with `db:push` must be baselined manually before adopting committed migrations.
+
+`vercel.json` applies browser security headers and schedules `/api/internal/cleanup` daily. Vercel authenticates the job with `CRON_SECRET`; it removes expired API keys and rate-limit rows, analytics older than `ANALYTICS_RETENTION_DAYS`, and security events older than `AUDIT_RETENTION_DAYS`.
 
 ## API
 
-Authenticate with `Authorization: Bearer <key>` (create keys in **Settings → API keys**).
+Authenticate with `Authorization: Bearer <key>` (create a scoped, expiring key in **Settings → API keys**). JSON requests must use `Content-Type: application/json`.
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -91,4 +96,6 @@ curl -X POST https://your-domain/api/v1/links \
 - Redirects issue `302` with `cache-control: no-store` so every hit is counted.
 - Click capture failures never block a redirect — they're logged and swallowed.
 - Reserved codes: `dashboard`, `login`, `setup`, `api`.
-- Rate limits live in the `rate_limits` table (fixed windows), so they hold across serverless instances: password guesses are capped at 5 per 15 min per link+IP, and link creation at 30/hour per user (dashboard and API alike).
+- Rate limits live in Postgres, so they hold across serverless instances: sign-in and 2FA endpoints, API keys, public visits, password guesses, and link creation are all throttled.
+- Browser responses include CSP, clickjacking, MIME-sniffing, referrer, permissions, opener, and HSTS protections. TOTP QR codes are generated locally and the secret is never sent to a third-party image service.
+- CSV exports neutralize spreadsheet formula prefixes. API and dashboard responses expose only `passwordProtected`, never stored password hashes.

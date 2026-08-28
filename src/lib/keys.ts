@@ -2,6 +2,9 @@ import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypt
 import { db } from './db'
 import { apiKeys, user } from './schema'
 import { eq } from 'drizzle-orm'
+import { isIP } from 'node:net'
+import { hitLimit } from './ratelimit'
+import type { ApiScope } from './api-scopes'
 
 export function sha256(input: string) {
   return createHash('sha256').update(input).digest('hex')
@@ -15,34 +18,37 @@ export function generateApiKey() {
 
 /** Client IP as seen by the app (Vercel/proxy headers first). */
 export function clientIp(request: Request) {
-  return (
-    request.headers.get('x-real-ip') ??
-    request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
-    null
-  )
+  const value = request.headers.get(process.env.TRUSTED_IP_HEADER ?? 'x-real-ip')?.trim() ?? null
+  return value && isIP(value) ? value : null
 }
 
 /**
- * Resolve a Bearer token to its api key row plus the owner's role, updating
- * lastUsedAt. Keys with no owner (pre-ownership rows not yet backfilled) are
- * treated as admin-owned.
+ * Resolve a Bearer token to its API key row plus the owner's role, updating
+ * lastUsedAt. Expired or orphaned credentials are rejected.
  */
 export async function resolveApiKey(request: Request) {
   const header = request.headers.get('authorization')
-  if (!header?.startsWith('Bearer ')) return null
-  const hash = sha256(header.slice(7).trim())
+  const match = header?.match(/^Bearer\s+(.+)$/i)
+  if (!match) return null
+  const hash = sha256(match[1].trim())
   const [row] = await db
     .select({ key: apiKeys, role: user.role })
     .from(apiKeys)
     .leftJoin(user, eq(apiKeys.userId, user.id))
     .where(eq(apiKeys.keyHash, hash))
-  if (!row) return null
+  if (!row || !row.key.userId || !row.role || row.key.expiresAt <= new Date()) return null
+  const limit = await hitLimit(`api:${row.key.id}`, 600, 60 * 1000)
+  if (!limit.allowed) return null
   db.update(apiKeys)
     .set({ lastUsedAt: new Date() })
     .where(eq(apiKeys.id, row.key.id))
     .execute()
     .catch(() => {})
-  return { ...row.key, role: row.role ?? 'admin' }
+  return { ...row.key, role: row.role }
+}
+
+export function hasApiScope(key: { scopes: string[] }, scope: ApiScope) {
+  return key.scopes.includes(scope)
 }
 
 export function hashPassword(password: string) {

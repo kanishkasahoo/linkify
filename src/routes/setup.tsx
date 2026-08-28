@@ -20,12 +20,20 @@ function SetupPage() {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [setupSecret, setSetupSecret] = useState('')
   const [loading, setLoading] = useState(false)
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
-    const { error } = await authClient.signUp.email({ name, email, password })
+    const { error } = await authClient.signUp.email({
+      name,
+      email,
+      password,
+      fetchOptions: {
+        headers: { 'x-linkify-setup-secret': setupSecret },
+      },
+    })
     setLoading(false)
     if (error) {
       toast.error(error.message ?? 'Sign up failed')
@@ -45,6 +53,20 @@ function SetupPage() {
         <CardContent>
           <form onSubmit={onSubmit} className="grid gap-4">
             <div className="grid gap-2">
+              <Label htmlFor="setup-secret">One-time setup secret</Label>
+              <Input
+                id="setup-secret"
+                type="password"
+                value={setupSecret}
+                onChange={(e) => setSetupSecret(e.target.value)}
+                autoComplete="off"
+                required
+              />
+              <p className="text-xs text-muted-foreground">
+                Enter the SETUP_SECRET configured in the deployment environment.
+              </p>
+            </div>
+            <div className="grid gap-2">
               <Label htmlFor="name">Name</Label>
               <Input id="name" value={name} onChange={(e) => setName(e.target.value)} required />
             </div>
@@ -57,7 +79,8 @@ function SetupPage() {
               <Input
                 id="password"
                 type="password"
-                minLength={8}
+                minLength={12}
+                maxLength={128}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required

@@ -6,10 +6,16 @@ import { Button } from '~/components/ui/button'
 import { ThemeToggle } from '~/components/theme-toggle'
 
 export const Route = createFileRoute('/dashboard')({
-  beforeLoad: async () => {
+  beforeLoad: async ({ location }) => {
     const { needsSetup, user } = await getBootstrap()
     if (needsSetup) throw redirect({ to: '/setup' })
     if (!user) throw redirect({ to: '/login' })
+    if (
+      location.pathname !== '/dashboard/settings' &&
+      (user.mustChangePassword || (user.role === 'admin' && !user.twoFactorEnabled))
+    ) {
+      throw redirect({ to: '/dashboard/settings' })
+    }
     return { user }
   },
   component: DashboardLayout,

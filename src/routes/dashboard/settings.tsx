@@ -1,10 +1,12 @@
 import { createFileRoute, useRouter } from '@tanstack/react-router'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { Copy, Fingerprint, KeyRound, Plus, ShieldCheck, Trash2 } from 'lucide-react'
+import { Activity, Copy, Fingerprint, KeyRound, Laptop, Plus, ShieldCheck, Trash2 } from 'lucide-react'
+import QRCode from 'qrcode'
 import { authClient } from '~/lib/auth-client'
 import { createApiKey, deleteApiKey } from '~/lib/links'
-import { getSettingsData } from '~/lib/settings'
+import { changeMyPassword, getSettingsData, revokeOtherSessions, revokeSession } from '~/lib/settings'
+import { API_SCOPES, type ApiScope } from '~/lib/api-scopes'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
@@ -19,25 +21,87 @@ export const Route = createFileRoute('/dashboard/settings')({
 })
 
 function SettingsPage() {
+  const { mustChangePassword } = Route.useLoaderData()
   return (
     <div className="grid max-w-3xl gap-6">
       <h1 className="text-xl font-semibold">Settings</h1>
+      {mustChangePassword && (
+        <div className="rounded-lg border border-orange-500/40 bg-orange-500/10 p-4 text-sm">
+          Change the temporary password before using the rest of the application.
+        </div>
+      )}
+      <PasswordCard />
       <TwoFactorCard />
       <PasskeysCard />
+      <SessionsCard />
       <ApiKeysCard />
+      <SecurityActivityCard />
     </div>
+  )
+}
+
+function PasswordCard() {
+  const router = useRouter()
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    setLoading(true)
+    try {
+      await changeMyPassword({ data: { currentPassword, newPassword } })
+      setCurrentPassword('')
+      setNewPassword('')
+      toast.success('Password changed and other sessions revoked')
+      router.invalidate()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Could not change password')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2"><KeyRound className="h-5 w-5" /> Password</CardTitle>
+        <CardDescription>Use at least 12 characters. Changing it signs out every other session.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={submit} className="grid max-w-sm gap-3">
+          <Input type="password" autoComplete="current-password" maxLength={128} placeholder="Current password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} required />
+          <Input type="password" autoComplete="new-password" minLength={12} maxLength={128} placeholder="New password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required />
+          <div><Button type="submit" disabled={loading}>{loading ? 'Changing…' : 'Change password'}</Button></div>
+        </form>
+      </CardContent>
+    </Card>
   )
 }
 
 // ---------- TOTP 2FA ----------
 
 function TwoFactorCard() {
+  const router = useRouter()
   const { twoFactorEnabled } = Route.useLoaderData()
   const [enabled, setEnabled] = useState(twoFactorEnabled)
   const [password, setPassword] = useState('')
   const [totpURI, setTotpURI] = useState<string | null>(null)
   const [code, setCode] = useState('')
   const [loading, setLoading] = useState(false)
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
+
+  useEffect(() => {
+    let active = true
+    if (!totpURI) {
+      setQrDataUrl(null)
+      return
+    }
+    QRCode.toDataURL(totpURI, { width: 180, margin: 1, errorCorrectionLevel: 'M' })
+      .then((url) => { if (active) setQrDataUrl(url) })
+      .catch(() => { if (active) toast.error('Could not render the TOTP QR code') })
+    return () => { active = false }
+  }, [totpURI])
 
   async function enable(e: React.FormEvent) {
     e.preventDefault()
@@ -62,6 +126,7 @@ function TwoFactorCard() {
     setTotpURI(null)
     setPassword('')
     setCode('')
+    router.invalidate()
   }
 
   async function disable() {
@@ -72,10 +137,6 @@ function TwoFactorCard() {
     toast.success('2FA disabled')
     setEnabled(false)
   }
-
-  const otpauthUrl = totpURI
-    ? `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(totpURI)}`
-    : null
 
   return (
     <Card>
@@ -96,7 +157,7 @@ function TwoFactorCard() {
             <p className="text-sm text-muted-foreground">
               Scan this QR code with your authenticator app, then enter the 6-digit code.
             </p>
-            {otpauthUrl && <img src={otpauthUrl} alt="TOTP QR code" width={180} height={180} className="rounded-md border bg-white p-2" />}
+            {qrDataUrl && <img src={qrDataUrl} alt="TOTP QR code" width={180} height={180} className="rounded-md border bg-white p-2" />}
             <details className="text-xs text-muted-foreground">
               <summary className="cursor-pointer">Manual entry URI</summary>
               <code className="break-all">{totpURI}</code>
@@ -112,13 +173,58 @@ function TwoFactorCard() {
             <div className="grid gap-2">
               <Label htmlFor="twofa-password">Confirm your password</Label>
               <Input
-                id="twofa-password" type="password" value={password}
+                id="twofa-password" type="password" maxLength={128} autoComplete="current-password" value={password}
                 onChange={(e) => setPassword(e.target.value)} required
               />
             </div>
             <Button type="submit" disabled={loading}>{loading ? 'Loading…' : 'Set up 2FA'}</Button>
           </form>
         )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function SessionsCard() {
+  const router = useRouter()
+  const { sessions } = Route.useLoaderData()
+
+  async function revoke(id: string) {
+    await revokeSession({ data: { id } })
+    toast.success('Session revoked')
+    router.invalidate()
+  }
+
+  async function revokeOthers() {
+    await revokeOtherSessions()
+    toast.success('Other sessions revoked')
+    router.invalidate()
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2"><Laptop className="h-5 w-5" /> Sessions</CardTitle>
+        <CardDescription>Sessions expire after 24 hours of inactivity.</CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-3">
+        <Table>
+          <TableHeader><TableRow><TableHead>Device</TableHead><TableHead>IP</TableHead><TableHead>Last active</TableHead><TableHead /></TableRow></TableHeader>
+          <TableBody>
+            {sessions.map((session) => (
+              <TableRow key={session.id}>
+                <TableCell className="max-w-[260px] truncate" title={session.userAgent ?? ''}>
+                  {session.current ? <Badge className="mr-2">current</Badge> : null}
+                  {session.userAgent?.slice(0, 60) ?? 'Unknown device'}
+                </TableCell>
+                <TableCell className="font-mono text-xs">{session.ipAddress ?? '—'}</TableCell>
+                <TableCell>{new Date(session.updatedAt).toLocaleString()}</TableCell>
+                <TableCell>{!session.current && <Button variant="ghost" size="icon" onClick={() => revoke(session.id)}><Trash2 className="text-destructive" /></Button>}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+        <div><Button variant="outline" size="sm" onClick={revokeOthers}>Revoke other sessions</Button></div>
       </CardContent>
     </Card>
   )
@@ -203,11 +309,13 @@ function ApiKeysCard() {
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
   const [newKey, setNewKey] = useState<string | null>(null)
+  const [expiresInDays, setExpiresInDays] = useState(90)
+  const [scopes, setScopes] = useState<Set<ApiScope>>(new Set(API_SCOPES))
 
   async function create(e: React.FormEvent) {
     e.preventDefault()
     try {
-      const row = await createApiKey({ data: { name } })
+      const row = await createApiKey({ data: { name, expiresInDays, scopes: [...scopes] } })
       setNewKey(row.key)
       setName('')
       router.invalidate()
@@ -241,17 +349,22 @@ function ApiKeysCard() {
                 <TableHead>Name</TableHead>
                 <TableHead>Key</TableHead>
                 <TableHead>Last used</TableHead>
+                <TableHead>Expires</TableHead>
                 <TableHead className="w-[60px]" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {keys.map((k) => (
                 <TableRow key={k.id}>
-                  <TableCell>{k.name}</TableCell>
+                  <TableCell>
+                    <div>{k.name}</div>
+                    <div className="text-xs text-muted-foreground">{k.scopes.join(', ')}</div>
+                  </TableCell>
                   <TableCell className="font-mono text-xs">{k.keyPrefix}…</TableCell>
                   <TableCell className="text-muted-foreground">
                     {k.lastUsedAt ? new Date(k.lastUsedAt).toLocaleDateString() : 'never'}
                   </TableCell>
+                  <TableCell className="text-muted-foreground">{new Date(k.expiresAt).toLocaleDateString()}</TableCell>
                   <TableCell>
                     <Button variant="ghost" size="icon" onClick={() => remove(k.id)}>
                       <Trash2 className="text-destructive" />
@@ -289,6 +402,27 @@ function ApiKeysCard() {
             ) : (
               <form onSubmit={create} className="grid gap-3">
                 <Input placeholder="e.g. CI deploy script" value={name} onChange={(e) => setName(e.target.value)} required />
+                <div className="grid gap-2">
+                  <Label htmlFor="key-expiry">Expires in days</Label>
+                  <Input id="key-expiry" type="number" min={1} max={365} value={expiresInDays} onChange={(e) => setExpiresInDays(Number(e.target.value))} required />
+                </div>
+                <div className="grid gap-2">
+                  <Label>Permissions</Label>
+                  {API_SCOPES.map((scope) => (
+                    <label key={scope} className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={scopes.has(scope)}
+                        onChange={(e) => {
+                          const next = new Set(scopes)
+                          if (e.target.checked) next.add(scope); else next.delete(scope)
+                          setScopes(next)
+                        }}
+                      />
+                      {scope}
+                    </label>
+                  ))}
+                </div>
                 <DialogFooter>
                   <Button type="submit">Create key</Button>
                 </DialogFooter>
@@ -296,6 +430,32 @@ function ApiKeysCard() {
             )}
           </DialogContent>
         </Dialog>
+      </CardContent>
+    </Card>
+  )
+}
+
+function SecurityActivityCard() {
+  const { securityEvents } = Route.useLoaderData()
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2"><Activity className="h-5 w-5" /> Security activity</CardTitle>
+        <CardDescription>Recent credential and account-sensitive actions.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {securityEvents.length === 0 ? <p className="text-sm text-muted-foreground">No events recorded yet.</p> : (
+          <Table>
+            <TableHeader><TableRow><TableHead>Event</TableHead><TableHead>IP</TableHead><TableHead>Time</TableHead></TableRow></TableHeader>
+            <TableBody>{securityEvents.map((event) => (
+              <TableRow key={event.id}>
+                <TableCell className="font-mono text-xs">{event.action}</TableCell>
+                <TableCell className="font-mono text-xs">{event.ip ?? '—'}</TableCell>
+                <TableCell>{new Date(event.createdAt).toLocaleString()}</TableCell>
+              </TableRow>
+            ))}</TableBody>
+          </Table>
+        )}
       </CardContent>
     </Card>
   )

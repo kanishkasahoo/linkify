@@ -1,19 +1,41 @@
 import { sql } from 'drizzle-orm'
-import { pgTable, text, timestamp, boolean, integer, index } from 'drizzle-orm/pg-core'
+import {
+  pgTable,
+  text,
+  timestamp,
+  boolean,
+  integer,
+  bigint,
+  jsonb,
+  index,
+  uniqueIndex,
+} from 'drizzle-orm/pg-core'
 
 // ---------- better-auth core tables ----------
 
-export const user = pgTable('user', {
-  id: text('id').primaryKey(),
-  name: text('name').notNull(),
-  email: text('email').notNull().unique(),
-  emailVerified: boolean('email_verified').notNull().default(false),
-  image: text('image'),
-  role: text('role').notNull().default('user'),
-  twoFactorEnabled: boolean('two_factor_enabled').default(false),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-  updatedAt: timestamp('updated_at').notNull().defaultNow(),
-})
+export const user = pgTable(
+  'user',
+  {
+    id: text('id').primaryKey(),
+    name: text('name').notNull(),
+    email: text('email').notNull().unique(),
+    emailVerified: boolean('email_verified').notNull().default(false),
+    image: text('image'),
+    role: text('role').notNull().default('user'),
+    twoFactorEnabled: boolean('two_factor_enabled').default(false),
+    mustChangePassword: boolean('must_change_password').notNull().default(false),
+    // Only the account created through first-run setup receives this marker.
+    // The partial unique index makes concurrent bootstrap requests atomic.
+    bootstrapOwner: boolean('bootstrap_owner').notNull().default(false),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('user_single_bootstrap_owner_idx')
+      .on(t.bootstrapOwner)
+      .where(sql`${t.bootstrapOwner} = true`),
+  ],
+)
 
 export const session = pgTable('session', {
   id: text('id').primaryKey(),
@@ -99,8 +121,9 @@ export const links = pgTable(
     passwordHash: text('password_hash'),
     expiresAt: timestamp('expires_at'),
     clickCount: integer('click_count').notNull().default(0),
-    // Nullable: legacy rows backfilled to the first admin; null = admin-owned.
-    userId: text('user_id').references(() => user.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },
@@ -135,10 +158,25 @@ export const apiKeys = pgTable('api_keys', {
   name: text('name').notNull(),
   keyHash: text('key_hash').notNull().unique(),
   keyPrefix: text('key_prefix').notNull(),
-  // Nullable: legacy rows backfilled to the first admin; null = admin-owned.
-  userId: text('user_id').references(() => user.id, { onDelete: 'cascade' }),
+  scopes: text('scopes')
+    .array()
+    .notNull()
+    .default(sql`array['links:read', 'links:write', 'stats:read']::text[]`),
+  expiresAt: timestamp('expires_at').notNull(),
+  userId: text('user_id')
+    .notNull()
+    .references(() => user.id, { onDelete: 'cascade' }),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   lastUsedAt: timestamp('last_used_at'),
+})
+
+// Better Auth's distributed rate-limit store. This is separate from the
+// application's fixed-window counters because Better Auth uses epoch millis.
+export const authRateLimit = pgTable('auth_rate_limit', {
+  id: text('id').primaryKey(),
+  key: text('key').notNull().unique(),
+  count: integer('count').notNull(),
+  lastRequest: bigint('last_request', { mode: 'number' }).notNull(),
 })
 
 // Fixed-window rate limit counters, e.g. 'pw:<linkId>:<ipHash>' or 'create:<userId>'.
@@ -148,6 +186,23 @@ export const rateLimits = pgTable('rate_limits', {
   resetAt: timestamp('reset_at').notNull(),
 })
 
+export const auditLogs = pgTable(
+  'audit_logs',
+  {
+    id: text('id').primaryKey(),
+    action: text('action').notNull(),
+    actorUserId: text('actor_user_id').references(() => user.id, { onDelete: 'set null' }),
+    targetType: text('target_type'),
+    targetId: text('target_id'),
+    ip: text('ip'),
+    userAgent: text('user_agent'),
+    metadata: jsonb('metadata').$type<Record<string, unknown>>(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (t) => [index('audit_logs_created_at_idx').on(t.createdAt), index('audit_logs_actor_idx').on(t.actorUserId)],
+)
+
 export type Link = typeof links.$inferSelect
 export type Click = typeof clicks.$inferSelect
 export type ApiKey = typeof apiKeys.$inferSelect
+export type AuditLog = typeof auditLogs.$inferSelect

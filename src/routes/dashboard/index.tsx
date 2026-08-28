@@ -9,7 +9,7 @@ import {
   bulkDeleteLinks, bulkExpireLinks, deleteLink, getOverview, listLinks,
 } from '~/lib/links'
 import { listUserDirectory } from '~/lib/users'
-import type { Link as LinkRow } from '~/lib/schema'
+import type { SafeLink as LinkRow } from '~/lib/links'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Badge } from '~/components/ui/badge'
@@ -98,7 +98,7 @@ function LinksPage() {
         rows = rows.filter((l) => isExpired(l))
         break
       case 'protected':
-        rows = rows.filter((l) => Boolean(l.passwordHash))
+        rows = rows.filter((l) => l.passwordProtected)
         break
       case 'unused':
         rows = rows.filter((l) => l.clickCount === 0)
@@ -183,7 +183,10 @@ function LinksPage() {
   function onBulkExport() {
     const rows = links.filter((l) => selected.has(l.id))
     const esc = (v: string | number | null | undefined) => {
-      const s = v == null ? '' : String(v)
+      let s = v == null ? '' : String(v)
+      // Spreadsheet applications treat these prefixes as formulas even in a
+      // correctly quoted CSV cell.
+      if (/^[\u0000-\u0020]*[=+\-@]/.test(s)) s = `'${s}`
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
     }
     const csv = [
@@ -198,7 +201,7 @@ function LinksPage() {
           l.clickCount,
           esc(l.createdAt ? new Date(l.createdAt).toISOString() : null),
           esc(l.expiresAt ? new Date(l.expiresAt).toISOString() : null),
-          l.passwordHash ? 'yes' : 'no',
+          l.passwordProtected ? 'yes' : 'no',
         ].join(','),
       ),
     ].join('\n')
@@ -346,7 +349,7 @@ function LinksPage() {
                     >
                       /{link.code}
                     </button>
-                    {link.passwordHash && <Lock className="h-3.5 w-3.5 text-muted-foreground" />}
+                    {link.passwordProtected && <Lock className="h-3.5 w-3.5 text-muted-foreground" />}
                     {isExpired(link) && <Badge variant="destructive">expired</Badge>}
                     {!isExpired(link) && link.expiresAt && (
                       <Badge variant="secondary" title={new Date(link.expiresAt).toLocaleString()}>

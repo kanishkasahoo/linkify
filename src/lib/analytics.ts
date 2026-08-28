@@ -36,20 +36,20 @@ export function extractClickMeta(request: Request): ClickMeta {
   let referrer: string | null = null
   if (refHeader) {
     try {
-      referrer = new URL(refHeader).hostname
+      referrer = new URL(refHeader).hostname.slice(0, 255)
     } catch {
-      referrer = refHeader
+      referrer = refHeader.slice(0, 255)
     }
   }
 
   return {
-    ip: h.get('x-real-ip') ?? h.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
-    country: h.get('x-vercel-ip-country'),
-    city: h.get('x-vercel-ip-city'),
-    userAgent: ua,
-    browser,
-    os,
-    deviceType,
+    ip: h.get(process.env.TRUSTED_IP_HEADER ?? 'x-real-ip')?.slice(0, 64) ?? null,
+    country: h.get('x-vercel-ip-country')?.slice(0, 8) ?? null,
+    city: h.get('x-vercel-ip-city')?.slice(0, 128) ?? null,
+    userAgent: ua?.slice(0, 512) ?? null,
+    browser: browser?.slice(0, 100) ?? null,
+    os: os?.slice(0, 100) ?? null,
+    deviceType: deviceType?.slice(0, 50) ?? null,
     isBot: isbot(ua),
     referrer,
   }

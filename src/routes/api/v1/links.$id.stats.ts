@@ -2,13 +2,13 @@ import { createFileRoute } from '@tanstack/react-router'
 import { and, desc, eq, gte, sql } from 'drizzle-orm'
 import { db } from '~/lib/db'
 import { clicks, links } from '~/lib/schema'
-import { resolveApiKey } from '~/lib/keys'
+import { resolveApiKey, hasApiScope } from '~/lib/keys'
 import { ownedByClause } from '~/lib/links'
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
   })
 }
 
@@ -18,6 +18,7 @@ export const Route = createFileRoute('/api/v1/links/$id/stats')({
       GET: async ({ request, params }) => {
         const key = await resolveApiKey(request)
         if (!key) return json({ error: 'Unauthorized' }, 401)
+        if (!hasApiScope(key, 'stats:read')) return json({ error: 'Forbidden' }, 403)
         const owned = ownedByClause({ id: key.userId, role: key.role })
         const [link] = await db
           .select()
